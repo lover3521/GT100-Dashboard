@@ -457,26 +457,15 @@ def render_fact_sheet_tab() -> None:
     if numeric_years:
         year_min, year_max = min(numeric_years), max(numeric_years)
         range_state_key = "fact_chart_year_range"
-        slider_state_key = "fact-chart-year-slider"
         start_key = "fact-chart-year-start"
         end_key = "fact-chart-year-end"
 
         if range_state_key not in st.session_state:
             st.session_state[range_state_key] = (year_min, year_max)
-
-        slider_range = st.slider(
-            "연도 범위",
-            min_value=year_min,
-            max_value=year_max,
-            value=st.session_state[range_state_key],
-            step=1,
-            key=slider_state_key,
-        )
-
-        if tuple(slider_range) != st.session_state[range_state_key]:
-            st.session_state[range_state_key] = tuple(slider_range)
-            st.session_state[start_key] = slider_range[0]
-            st.session_state[end_key] = slider_range[1]
+        if start_key not in st.session_state:
+            st.session_state[start_key] = st.session_state[range_state_key][0]
+        if end_key not in st.session_state:
+            st.session_state[end_key] = st.session_state[range_state_key][1]
 
         current_start, current_end = st.session_state[range_state_key]
         start_col, end_col = st.columns(2)
@@ -503,7 +492,6 @@ def render_fact_sheet_tab() -> None:
         selected_range = (max(year_min, selected_range[0]), min(year_max, selected_range[1]))
         if selected_range != st.session_state[range_state_key]:
             st.session_state[range_state_key] = selected_range
-            st.session_state[slider_state_key] = selected_range
 
         year_range = st.session_state[range_state_key]
         metric_multi = st.multiselect(
@@ -595,10 +583,10 @@ def get_publications_dataframe() -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(
             [
-                {"논문명": "Smart Agriculture using AI", "저널": "Nature Food", "발행연도": 2024, "분야": "생명", "피인용수": 42},
-                {"논문명": "Energy Storage Materials", "저널": "Advanced Energy Materials", "발행연도": 2023, "분야": "공학", "피인용수": 55},
-                {"논문명": "Carbon Neutral Cities", "저널": "Renewable Energy", "발행연도": 2022, "분야": "환경", "피인용수": 33},
-                {"논문명": "Precision Medicine Pipeline", "저널": "Lancet Digital Health", "발행연도": 2024, "분야": "의생명", "피인용수": 29},
+                {"논문명": "Smart Agriculture using AI", "저널": "Nature Food", "발행연도": 2024, "분야": "생명", "피인용수": 42, "논문 유형": "Article", "저자": "Ahn J.; Kim S."},
+                {"논문명": "Energy Storage Materials", "저널": "Advanced Energy Materials", "발행연도": 2023, "분야": "공학", "피인용수": 55, "논문 유형": "Review", "저자": "Lee H.; Park K."},
+                {"논문명": "Carbon Neutral Cities", "저널": "Renewable Energy", "발행연도": 2022, "분야": "환경", "피인용수": 33, "논문 유형": "Article", "저자": "Choi M.; Seo G."},
+                {"논문명": "Precision Medicine Pipeline", "저널": "Lancet Digital Health", "발행연도": 2024, "분야": "의생명", "피인용수": 29, "논문 유형": "Article", "저자": "Jung Y.; Lee J."},
             ]
         )
     subject_columns = [
@@ -614,6 +602,13 @@ def get_publications_dataframe() -> pd.DataFrame:
             else:
                 subject_series = subject_series.fillna(df[col])
 
+    doc_type_col = None
+    for col in df.columns:
+        normalized = col.strip().lower().replace(" ", "")
+        if normalized in {"publicationtype", "documenttype"}:
+            doc_type_col = col
+            break
+
     mapped = pd.DataFrame(
         {
             "논문명": df.get("Title"),
@@ -621,6 +616,8 @@ def get_publications_dataframe() -> pd.DataFrame:
             "발행연도": pd.to_numeric(df.get("Year"), errors="coerce"),
             "분야": subject_series,
             "피인용수": pd.to_numeric(df.get("Citations"), errors="coerce"),
+            "논문 유형": df.get(doc_type_col) if doc_type_col else None,
+            "저자": df.get("Authors"),
         }
     )
     mapped = mapped.dropna(subset=["발행연도"])
@@ -628,6 +625,8 @@ def get_publications_dataframe() -> pd.DataFrame:
     mapped["피인용수"] = mapped["피인용수"].fillna(0).astype(int)
     mapped["저널"] = mapped["저널"].fillna("-")
     mapped["분야"] = mapped["분야"].fillna("-")
+    mapped["논문 유형"] = mapped["논문 유형"].fillna("미분류")
+    mapped["저자"] = mapped["저자"].fillna("-")
     return mapped.reset_index(drop=True)
 
 def render_publications_tab() -> None:
@@ -638,14 +637,81 @@ def render_publications_tab() -> None:
         return
 
     year_min, year_max = int(publications_df["발행연도"].min()), int(publications_df["발행연도"].max())
-    year_range = st.slider("발행연도", year_min, year_max, (year_min, year_max))
-    fields = st.multiselect("연구 분야", options=sorted(publications_df["분야"].unique()), default=sorted(publications_df["분야"].unique()))
+    start_col, end_col = st.columns(2)
+    with start_col:
+        start_year = st.number_input("시작 연도", min_value=year_min, max_value=year_max, value=year_min, step=1, key="pub-year-start")
+    with end_col:
+        end_year = st.number_input("종료 연도", min_value=year_min, max_value=year_max, value=year_max, step=1, key="pub-year-end")
+    selected_years = tuple(sorted((int(start_year), int(end_year))))
+
+    doc_types = sorted(publications_df["논문 유형"].dropna().unique())
+    selected_types = st.multiselect("논문 유형", options=doc_types, default=doc_types)
+
+    search_query = st.text_input("논문 검색 (제목/저자/저널)", value="", key="pub-search").strip().lower()
 
     filtered = publications_df[
-        publications_df["발행연도"].between(year_range[0], year_range[1])
-        & publications_df["분야"].isin(fields)
+        publications_df["발행연도"].between(selected_years[0], selected_years[1])
+        & publications_df["논문 유형"].isin(selected_types)
     ]
-    st.dataframe(filtered, use_container_width=True, hide_index=True)
+
+    if search_query:
+        mask = (
+            filtered["논문명"].fillna("").str.lower().str.contains(search_query)
+            | filtered["저자"].fillna("").str.lower().str.contains(search_query)
+            | filtered["저널"].fillna("").str.lower().str.contains(search_query)
+        )
+        filtered = filtered[mask]
+
+    if filtered.empty:
+        st.info("조건에 맞는 논문이 없습니다.")
+        return
+
+    # 기본 표시 순서를 맞춰서 저자를 저널 앞에 배치
+    display_order = ["논문명", "저자", "저널", "발행연도", "분야", "논문 유형", "피인용수"]
+    ordered_cols = [col for col in display_order if col in filtered.columns] + [
+        col for col in filtered.columns if col not in display_order
+    ]
+    filtered = filtered[ordered_cols]
+
+    page_size = 50
+    total_rows = len(filtered)
+    total_pages = max(1, math.ceil(total_rows / page_size))
+    if "pub-page" not in st.session_state:
+        st.session_state["pub-page"] = 1
+    current_page = min(st.session_state["pub-page"], total_pages)
+    if current_page != st.session_state["pub-page"]:
+        st.session_state["pub-page"] = current_page
+
+    def _set_page(page: int) -> None:
+        st.session_state["pub-page"] = max(1, min(total_pages, page))
+
+    # 페이지 번호 버튼 구성 (현재 페이지 주변으로 5개까지)
+    start_page = max(1, current_page - 2)
+    end_page = min(total_pages, start_page + 4)
+    start_page = max(1, end_page - 4)
+    page_numbers = list(range(start_page, end_page + 1))
+
+    if total_pages > 1:
+        cols = st.columns(len(page_numbers) + 2)
+        with cols[0]:
+            st.button("← 이전", disabled=current_page == 1, on_click=_set_page, args=(current_page - 1,))
+        for idx, page_num in enumerate(page_numbers, start=1):
+            with cols[idx]:
+                st.button(
+                    str(page_num),
+                    on_click=_set_page,
+                    args=(page_num,),
+                    type="primary" if page_num == current_page else "secondary",
+                )
+        with cols[-1]:
+            st.button("다음 →", disabled=current_page == total_pages, on_click=_set_page, args=(current_page + 1,))
+
+    start_idx = (current_page - 1) * page_size
+    end_idx = start_idx + page_size
+    page_df = filtered.iloc[start_idx:end_idx]
+
+    st.dataframe(page_df, use_container_width=True, hide_index=True, height=600)
+    st.caption(f"총 {total_rows}건 · 페이지 {current_page}/{total_pages} · 페이지당 {page_size}건")
     st.download_button(
         "CSV 다운로드",
         filtered.to_csv(index=False).encode("utf-8-sig"),

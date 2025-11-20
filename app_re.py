@@ -676,7 +676,36 @@ def render_publications_tab() -> None:
     page_size = 50
     total_rows = len(filtered)
     total_pages = max(1, math.ceil(total_rows / page_size))
-    current_page = int(st.number_input("페이지", min_value=1, max_value=total_pages, value=1, step=1, key="pub-page"))
+    if "pub-page" not in st.session_state:
+        st.session_state["pub-page"] = 1
+    current_page = min(st.session_state["pub-page"], total_pages)
+    if current_page != st.session_state["pub-page"]:
+        st.session_state["pub-page"] = current_page
+
+    def _set_page(page: int) -> None:
+        st.session_state["pub-page"] = max(1, min(total_pages, page))
+
+    # 페이지 번호 버튼 구성 (현재 페이지 주변으로 5개까지)
+    start_page = max(1, current_page - 2)
+    end_page = min(total_pages, start_page + 4)
+    start_page = max(1, end_page - 4)
+    page_numbers = list(range(start_page, end_page + 1))
+
+    if total_pages > 1:
+        cols = st.columns(len(page_numbers) + 2)
+        with cols[0]:
+            st.button("← 이전", disabled=current_page == 1, on_click=_set_page, args=(current_page - 1,))
+        for idx, page_num in enumerate(page_numbers, start=1):
+            with cols[idx]:
+                st.button(
+                    str(page_num),
+                    on_click=_set_page,
+                    args=(page_num,),
+                    type="primary" if page_num == current_page else "secondary",
+                )
+        with cols[-1]:
+            st.button("다음 →", disabled=current_page == total_pages, on_click=_set_page, args=(current_page + 1,))
+
     start_idx = (current_page - 1) * page_size
     end_idx = start_idx + page_size
     page_df = filtered.iloc[start_idx:end_idx]
