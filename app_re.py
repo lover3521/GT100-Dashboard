@@ -1,4 +1,4 @@
-﻿"""GT100 진입전략 대시보드 메인 애플리케이션."""
+"""GT100 진입전략 대시보드 메인 애플리케이션."""
 
 import math
 from pathlib import Path
@@ -6,7 +6,6 @@ from pathlib import Path
 import altair as alt
 import pandas as pd
 import streamlit as st
-
 
 # 기본 페이지 설정
 st.set_page_config(
@@ -35,6 +34,11 @@ st.markdown(
         [data-testid="stSidebar"] div[role="radiogroup"] label {
             padding: 0.2rem 0;
             border-bottom: 1px solid #f0f0f0;
+        }
+        [data-testid="stSidebar"] div[role="radiogroup"] label p {
+            color: #c1121f;
+            font-weight: 600;
+            margin-left: 0.1rem;
         }
     </style>
     """,
@@ -200,11 +204,9 @@ EMBEDDED_FACT_SHEET = {
     ],
 }
 
-
 def _looks_like_year(label: object) -> bool:
     label_str = str(label)
     return label_str.isdigit() and 1900 <= int(label_str) <= 2100
-
 
 def build_fact_sheet_df_from_embedded() -> pd.DataFrame:
     records: list[dict[str, object]] = []
@@ -222,7 +224,6 @@ def build_fact_sheet_df_from_embedded() -> pd.DataFrame:
                     continue
             records.append(row)
     return pd.DataFrame(records)
-
 
 @st.cache_data
 def load_fact_sheet_data(xlsx_path: str) -> pd.DataFrame:
@@ -253,16 +254,13 @@ def load_fact_sheet_data(xlsx_path: str) -> pd.DataFrame:
     fact_df = fact_df[base_columns]
     return fact_df.reset_index(drop=True)
 
-
 def get_fact_sheet_dataframe() -> pd.DataFrame:
     if not FACT_SHEET_FILE.exists():
         return build_fact_sheet_df_from_embedded()
     return load_fact_sheet_data(str(FACT_SHEET_FILE))
 
-
 def get_fact_sheet_year_columns(fact_df: pd.DataFrame) -> list[int]:
     return sorted(col for col in fact_df.columns if isinstance(col, int))
-
 
 def build_indicator_dataframe(fact_df: pd.DataFrame, indicator: str) -> pd.DataFrame:
     if fact_df.empty:
@@ -271,7 +269,6 @@ def build_indicator_dataframe(fact_df: pd.DataFrame, indicator: str) -> pd.DataF
     display_columns = ["지표명", "단위"] + year_columns
     subset = fact_df[fact_df["indicator_group"] == indicator][display_columns].copy()
     return subset.reset_index(drop=True)
-
 
 def rank_range_to_midpoint(value: object) -> float | None:
     if value is None:
@@ -292,7 +289,6 @@ def rank_range_to_midpoint(value: object) -> float | None:
             return None
     return None
 
-
 def describe_rank_delta(current: object, previous: object) -> str | None:
     current_mid = rank_range_to_midpoint(current)
     previous_mid = rank_range_to_midpoint(previous)
@@ -305,13 +301,11 @@ def describe_rank_delta(current: object, previous: object) -> str | None:
     direction = "개선" if diff > 0 else "하락"
     return f"{diff_value}위 {direction}"
 
-
 SCIVAL_BENCHMARK_MULTIPLIERS = {
     "전북대": 1.00,
     "University A": 1.12,
     "University B": 0.94,
 }
-
 
 def build_scival_benchmark_dataframe(year: int, fact_df: pd.DataFrame) -> pd.DataFrame:
     columns = []
@@ -334,7 +328,6 @@ def build_scival_benchmark_dataframe(year: int, fact_df: pd.DataFrame) -> pd.Dat
     df = pd.DataFrame(values, columns=multi_columns, index=universities)
     df.index.name = "기관"
     return df
-
 
 def render_global_ranking_tab() -> None:
     st.subheader("Global Ranking")
@@ -394,7 +387,6 @@ def render_global_ranking_tab() -> None:
         st.altair_chart(chart, use_container_width=True)
     st.dataframe(ranking_df[["연도", "THE", "QS"]], use_container_width=True, hide_index=True)
 
-
 def render_fact_sheet_tab() -> None:
     st.subheader("Fact Sheet")
     metric_cols = st.columns(3)
@@ -417,7 +409,7 @@ def render_fact_sheet_tab() -> None:
         st.warning("Fact Sheet 지표 구성이 올바르지 않습니다.")
         return
 
-    st.markdown("#### 지표 상세 보기")
+        st.markdown("#### 지표 상세 보기")
     detail_indicator = st.selectbox(
         "지표 그룹 선택",
         indicator_groups,
@@ -427,15 +419,13 @@ def render_fact_sheet_tab() -> None:
     if detail_df.empty:
         st.info("해당 지표 그룹 데이터가 없습니다.")
     else:
-        detail_display = detail_df.copy()
         palette_cycle = ["#fde9f4", "#eef6ff", "#fef5e5", "#f3f9ef", "#f1e9ff"]
         group_palette = {g: palette_cycle[i % len(palette_cycle)] for i, g in enumerate(indicator_groups)}
+        detail_display = detail_df.copy()
         if "단위" in detail_display.columns:
             detail_display["지표명"] = detail_display.apply(
                 lambda row: (
-                    row["지표명"]
-                    if row.get("단위") in ("", "-", None)
-                    else f"{row['지표명']} ({row['단위']})"
+                    row["지표명"] if row.get("단위") in ("", "-", None) else f"{row['지표명']} ({row['단위']})"
                 ),
                 axis=1,
             )
@@ -446,8 +436,10 @@ def render_fact_sheet_tab() -> None:
                 lambda v: "-" if pd.isna(v) else (f"{int(v):,}" if float(v).is_integer() else f"{float(v):,.2f}")
             )
         detail_color = group_palette.get(detail_indicator, "#fafafa")
+
         def _detail_highlight(_row: pd.Series) -> list[str]:
             return [f"background-color: {detail_color}"] * len(detail_display.columns)
+
         st.dataframe(
             detail_display.style.apply(_detail_highlight, axis=1),
             use_container_width=True,
@@ -464,19 +456,56 @@ def render_fact_sheet_tab() -> None:
     numeric_years = [col for col in chart_df.columns if isinstance(col, int)]
     if numeric_years:
         year_min, year_max = min(numeric_years), max(numeric_years)
-        year_range = st.slider(
+        range_state_key = "fact_chart_year_range"
+        slider_state_key = "fact-chart-year-slider"
+        start_key = "fact-chart-year-start"
+        end_key = "fact-chart-year-end"
+
+        if range_state_key not in st.session_state:
+            st.session_state[range_state_key] = (year_min, year_max)
+
+        slider_range = st.slider(
             "연도 범위",
             min_value=year_min,
             max_value=year_max,
-            value=(year_min, year_max),
+            value=st.session_state[range_state_key],
             step=1,
+            key=slider_state_key,
         )
-        c1, c2 = st.columns(2)
-        start_input = c1.number_input("시작 연도", min_value=year_min, max_value=year_max, value=year_range[0], step=1)
-        end_input = c2.number_input("종료 연도", min_value=year_min, max_value=year_max, value=year_range[1], step=1)
-        if start_input > end_input:
-            start_input, end_input = end_input, start_input
-        year_range = (start_input, end_input)
+
+        if tuple(slider_range) != st.session_state[range_state_key]:
+            st.session_state[range_state_key] = tuple(slider_range)
+            st.session_state[start_key] = slider_range[0]
+            st.session_state[end_key] = slider_range[1]
+
+        current_start, current_end = st.session_state[range_state_key]
+        start_col, end_col = st.columns(2)
+        with start_col:
+            start_input = st.number_input(
+                "시작 연도",
+                min_value=year_min,
+                max_value=year_max,
+                value=current_start,
+                step=1,
+                key=start_key,
+            )
+        with end_col:
+            end_input = st.number_input(
+                "종료 연도",
+                min_value=year_min,
+                max_value=year_max,
+                value=current_end,
+                step=1,
+                key=end_key,
+            )
+
+        selected_range = tuple(sorted((int(start_input), int(end_input))))
+        selected_range = (max(year_min, selected_range[0]), min(year_max, selected_range[1]))
+        if selected_range != st.session_state[range_state_key]:
+            st.session_state[range_state_key] = selected_range
+            st.session_state[slider_state_key] = selected_range
+
+        year_range = st.session_state[range_state_key]
         metric_multi = st.multiselect(
             "차트 지표 선택",
             chart_df["지표명"],
@@ -525,20 +554,23 @@ def render_fact_sheet_tab() -> None:
         )
         display_df = display_df.drop(columns=["단위"], errors="ignore")
 
-        display_df["__group"] = display_df["지표 그룹"]
-        display_df["지표 그룹"] = display_df["지표 그룹"].where(~display_df["지표 그룹"].duplicated(), "")
+        display_df["지표 그룹 표시"] = display_df["지표 그룹"].where(
+            ~display_df["지표 그룹"].duplicated(), ""
+        )
+        display_df = display_df.drop(columns=["지표 그룹"]).rename(
+            columns={"지표 그룹 표시": "지표 그룹"}
+        )
 
         palette_cycle = ["#fde9f4", "#eef6ff", "#fef5e5", "#f3f9ef", "#f1e9ff"]
         group_palette = {g: palette_cycle[i % len(palette_cycle)] for i, g in enumerate(indicator_groups)}
-        color_series = display_df["__group"].map(group_palette).fillna("#fafafa")
+        color_series = master_df["지표 그룹"].map(group_palette).fillna("#fafafa")
 
         def highlight_group(row: pd.Series) -> list[str]:
             color = color_series[row.name]
             return [f"background-color: {color}"] * len(row)
 
         styled_df = (
-            display_df.drop(columns=["__group"])
-            .style.apply(highlight_group, axis=1)
+            display_df.style.apply(highlight_group, axis=1)
             .set_properties(subset=["지표 그룹"], **{"font-weight": "600"})
         )
         st.dataframe(styled_df, use_container_width=True, hide_index=True)
@@ -546,186 +578,80 @@ def render_fact_sheet_tab() -> None:
         st.info("표시할 Fact Sheet 데이터가 없습니다.")
     st.caption("지표명 뒤 괄호 안에 단위를 표시했습니다.")
 
-
-@st.cache_data
 def load_publication_csv(csv_path: str) -> pd.DataFrame:
-    """Scopus에서 내려받은 CSV를 읽는다(인코딩 자동 판별)."""
     try:
         return pd.read_csv(csv_path, encoding="utf-8")
     except UnicodeDecodeError:
         return pd.read_csv(csv_path, encoding="cp949")
 
-
-def _build_sample_publications() -> pd.DataFrame:
-    """Scopus 데이터를 사용할 수 없을 때 쓰는 예시 데이터."""
-    return pd.DataFrame(
-        [
-            {
-                "논문명": "Smart Agriculture using AI",
-                "저널/컨퍼런스": "Nature Food",
-                "발행년도": 2024,
-                "문서 유형": "Article",
-                "피인용수": 42,
-                "저자": "Kim et al.",
-                "DOI": "-",
-                "링크": "-",
-            },
-            {
-                "논문명": "Energy Storage Materials",
-                "저널/컨퍼런스": "Advanced Energy Materials",
-                "발행년도": 2023,
-                "문서 유형": "Article",
-                "피인용수": 55,
-                "저자": "Lee et al.",
-                "DOI": "-",
-                "링크": "-",
-            },
-        ]
-    )
-
-
 def get_publications_dataframe() -> pd.DataFrame:
-    """전북대 논문 목록을 반환한다."""
     if SCOPUS_EXPORT_FILE.exists():
         try:
-            raw_df = load_publication_csv(str(SCOPUS_EXPORT_FILE))
+            df = load_publication_csv(str(SCOPUS_EXPORT_FILE))
         except Exception:
-            raw_df = pd.DataFrame()
+            df = pd.DataFrame()
     else:
-        raw_df = pd.DataFrame()
+        df = pd.DataFrame()
+    if df.empty:
+        return pd.DataFrame(
+            [
+                {"논문명": "Smart Agriculture using AI", "저널": "Nature Food", "발행연도": 2024, "분야": "생명", "피인용수": 42},
+                {"논문명": "Energy Storage Materials", "저널": "Advanced Energy Materials", "발행연도": 2023, "분야": "공학", "피인용수": 55},
+                {"논문명": "Carbon Neutral Cities", "저널": "Renewable Energy", "발행연도": 2022, "분야": "환경", "피인용수": 33},
+                {"논문명": "Precision Medicine Pipeline", "저널": "Lancet Digital Health", "발행연도": 2024, "분야": "의생명", "피인용수": 29},
+            ]
+        )
+    subject_columns = [
+        "All Science Journal Classification (ASJC) field name",
+        "Quacquarelli Symonds (QS) Subject field name",
+        "Times Higher Education (THE) field name",
+    ]
+    subject_series = pd.Series([None] * len(df))
+    for col in subject_columns:
+        if col in df.columns:
+            if subject_series.isna().all():
+                subject_series = df[col]
+            else:
+                subject_series = subject_series.fillna(df[col])
 
-    if raw_df.empty:
-        return _build_sample_publications()
-
-    df = pd.DataFrame(
+    mapped = pd.DataFrame(
         {
-            "논문명": raw_df.get("Title", ""),
-            "저널/컨퍼런스": raw_df.get("Scopus Source title", "").fillna("미상"),
-            "발행년도": pd.to_numeric(raw_df.get("Year"), errors="coerce"),
-            "문서 유형": raw_df.get("Publication type", "").fillna("기타"),
-            "피인용수": pd.to_numeric(raw_df.get("Citations"), errors="coerce"),
-            "저자": raw_df.get("Authors", "").fillna("-"),
-            "DOI": raw_df.get("DOI", "").fillna("-"),
-            "링크": raw_df.get("Publication link to Topic strength", "").fillna("-"),
+            "논문명": df.get("Title"),
+            "저널": df.get("Scopus Source title"),
+            "발행연도": pd.to_numeric(df.get("Year"), errors="coerce"),
+            "분야": subject_series,
+            "피인용수": pd.to_numeric(df.get("Citations"), errors="coerce"),
         }
     )
-    df = df.dropna(subset=["발행년도"]).copy()
-    df["발행년도"] = df["발행년도"].astype(int)
-    df["피인용수"] = df["피인용수"].fillna(0).astype(int)
-    df["논문명"] = df["논문명"].replace("", "-")
-    df["저널/컨퍼런스"] = df["저널/컨퍼런스"].replace("", "미상")
-    df["문서 유형"] = df["문서 유형"].replace("", "기타")
-    df["DOI"] = df["DOI"].replace("", "-")
-    df["링크"] = df["링크"].replace("", "-")
-    return df.reset_index(drop=True)
-
+    mapped = mapped.dropna(subset=["발행연도"])
+    mapped["발행연도"] = mapped["발행연도"].astype(int)
+    mapped["피인용수"] = mapped["피인용수"].fillna(0).astype(int)
+    mapped["저널"] = mapped["저널"].fillna("-")
+    mapped["분야"] = mapped["분야"].fillna("-")
+    return mapped.reset_index(drop=True)
 
 def render_publications_tab() -> None:
-    """전북대 논문 목록 표시."""
     st.subheader("전북대 논문 목록")
     publications_df = get_publications_dataframe()
     if publications_df.empty:
         st.info("표시할 논문 데이터가 없습니다.")
         return
 
-    data_min = int(publications_df["발행년도"].min())
-    data_max = int(publications_df["발행년도"].max())
-    slider_min = min(2020, data_min)
-    slider_max = max(2024, data_max)
-    year_range = st.slider(
-        "발행년도",
-        slider_min,
-        slider_max,
-        (slider_min, slider_max),
-    )
-
-    doc_types = sorted(publications_df["문서 유형"].dropna().unique().tolist())
-    selected_types = st.multiselect(
-        "문서 유형",
-        options=doc_types,
-        default=doc_types,
-    )
-    page_size = st.selectbox(
-        "페이지 당 표시 건수",
-        options=[10, 50, 100],
-        index=0,
-    )
+    year_min, year_max = int(publications_df["발행연도"].min()), int(publications_df["발행연도"].max())
+    year_range = st.slider("발행연도", year_min, year_max, (year_min, year_max))
+    fields = st.multiselect("연구 분야", options=sorted(publications_df["분야"].unique()), default=sorted(publications_df["분야"].unique()))
 
     filtered = publications_df[
-        publications_df["발행년도"].between(year_range[0], year_range[1])
-        & publications_df["문서 유형"].isin(selected_types)
+        publications_df["발행연도"].between(year_range[0], year_range[1])
+        & publications_df["분야"].isin(fields)
     ]
-
-    if filtered.empty:
-        st.info("조건에 맞는 논문이 없습니다.")
-        return
-
-    filter_signature = (year_range, tuple(sorted(selected_types)), page_size)
-    page_state_key = "publications_page"
-    signature_key = "publications_page_signature"
-    if st.session_state.get(signature_key) != filter_signature:
-        st.session_state[page_state_key] = 1
-        st.session_state[signature_key] = filter_signature
-
-    total_pages = max(1, math.ceil(len(filtered) / page_size))
-    current_page = st.session_state.get(page_state_key, 1)
-    current_page = max(1, min(current_page, total_pages))
-    st.session_state[page_state_key] = current_page
-
-    start_idx = (current_page - 1) * page_size
-    end_idx = start_idx + page_size
-    page_df = filtered.iloc[start_idx:end_idx]
-
-    navbar = st.container()
-    if total_pages > 1:
-        num_buttons = min(5, total_pages)
-        window_start = max(1, current_page - num_buttons // 2)
-        window_end = min(total_pages, window_start + num_buttons - 1)
-        window_start = max(1, window_end - num_buttons + 1)
-        page_numbers = list(range(window_start, window_end + 1))
-        cols = navbar.columns(len(page_numbers) + 4)
-        if cols[0].button("« 처음", disabled=current_page == 1):
-            st.session_state[page_state_key] = 1
-            st.experimental_rerun()
-        if cols[1].button("‹ 이전", disabled=current_page == 1):
-            st.session_state[page_state_key] = current_page - 1
-            st.experimental_rerun()
-        for idx, page_num in enumerate(page_numbers):
-            if cols[idx + 2].button(str(page_num), disabled=page_num == current_page):
-                st.session_state[page_state_key] = page_num
-                st.experimental_rerun()
-        if cols[-2].button("다음 ›", disabled=current_page == total_pages):
-            st.session_state[page_state_key] = current_page + 1
-            st.experimental_rerun()
-        if cols[-1].button("마지막 »", disabled=current_page == total_pages):
-            st.session_state[page_state_key] = total_pages
-            st.experimental_rerun()
-
-    table_height = min(900, 160 + page_size * 35)
-    display_columns = [
-        "발행년도",
-        "문서 유형",
-        "논문명",
-        "저널/컨퍼런스",
-        "저자",
-        "피인용수",
-        "DOI",
-        "링크",
-    ]
-    st.dataframe(
-        page_df[display_columns],
-        use_container_width=True,
-        hide_index=True,
-        height=table_height,
-    )
-    st.caption(f"총 {len(filtered):,}건 · 페이지 {current_page}/{total_pages}")
+    st.dataframe(filtered, use_container_width=True, hide_index=True)
     st.download_button(
         "CSV 다운로드",
         filtered.to_csv(index=False).encode("utf-8-sig"),
         file_name="jbnu_publications.csv",
         mime="text/csv",
     )
-
 
 def render_benchmark_the_qs_tab() -> None:
     st.subheader("벤치마킹 대학 비교 (THE/QS)")
@@ -751,7 +677,6 @@ def render_benchmark_the_qs_tab() -> None:
         hide_index=True,
     )
 
-
 def render_benchmark_scival_tab() -> None:
     st.subheader("벤치마킹 대학 비교 (SciVal)")
     fact_df = get_fact_sheet_dataframe()
@@ -776,10 +701,8 @@ def render_benchmark_scival_tab() -> None:
     )
     st.caption("각 대학 값은 Fact Sheet 수치를 단순 가중치로 보정한 모의 값입니다.")
 
-
 def render_placeholder(section_name: str) -> None:
     st.info(f"{section_name} 섹션은 추후 구현 예정입니다.")
-
 
 NAV_STRUCTURE = {
     "전북대학교 현황": [
