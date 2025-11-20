@@ -1,0 +1,21 @@
+﻿GT100 진입전략 대시보드 - 사이트 구조 및 기능정의 V01,Unnamed: 1,Unnamed: 2,Unnamed: 3,Unnamed: 4,Unnamed: 5
+1depths,2depths,3depths,Tap/Subflow,Discription,page
+Main Page,,,,전북대 현황 Summary 제공,1
+전북대학교 현황,Global Ranking,전북대(THE),,,1
+,,전북대(QS),,,1
+,Fact Sheet,Table/Chart,"뷰 전환 버튼/
+지표선정모달",Table형태-Chart 형태 뷰전환 가능/ 지표선정 모달을 통해 사용자가 원하는 지표를 선정하여 상세지표 조회 가능,1
+,,전체 지표,추출 버튼,"전체지표 추출(xlsx, csv)",1
+,전북대 논문 목록,Table,추출 버튼,전북대 논문의 서지사항 추출,1
+,벤치마킹대학 비교(THE/QS),THE(Table/Chart),뷰 전환 버튼,Table형태-Chart 형태 뷰전환 가능,1
+,,QS(Table/Chart),뷰 전환 버튼,Table형태-Chart 형태 뷰전환 가능,1
+,벤치마킹대학 비교(SciVal),Table/Chart,"뷰 전환 버튼/
+지표선정모달",Table형태-Chart 형태 뷰전환 가능/ 지표선정 모달을 통해 사용자가 원하는 대학과 지표를 선정하여 상세지표 조회 가능,1
+,,전체 지표,추출 버튼,"전체지표 추출(xlsx, csv)",1
+학문분야별 연구성과,분야별 Fact Sheet,Table/Chart,"뷰 전환 버튼/
+지표선정모달",Table형태-Chart 형태 뷰전환 가능/ 지표선정 모달을 통해 사용자가 원하는 분야와 지표를 선정하여 상세지표 조회 가능,1
+우수연구성과 선정,-,-,-,-,-
+연구지원 전략제언,현황 진단,-,-,-,-
+,연구역량 강화,-,-,-,-
+Header,로고,,,로고 클릭 시 메인으로 이동,
+,,,,총계,11+@
