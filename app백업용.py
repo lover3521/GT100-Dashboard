@@ -542,16 +542,20 @@ def render_fact_sheet_tab() -> None:
     numeric_years = [col for col in chart_df.columns if isinstance(col, int)]
     if numeric_years:
         year_min, year_max = min(numeric_years), max(numeric_years)
-        range_state_key = "fact_chart_year_range"
-        start_key = "fact-chart-year-start"
-        end_key = "fact-chart-year-end"
+        range_state_key = f"fact_chart_year_range_{chart_indicator}"
+        start_key = f"fact-chart-year-start-{chart_indicator}"
+        end_key = f"fact-chart-year-end-{chart_indicator}"
 
-        if range_state_key not in st.session_state:
-            st.session_state[range_state_key] = (year_min, year_max)
+        stored_range = st.session_state.get(range_state_key, (year_min, year_max))
+        default_start = min(max(int(stored_range[0]), year_min), year_max)
+        default_end = min(max(int(stored_range[1]), year_min), year_max)
+        if default_start > default_end:
+            default_start, default_end = default_end, default_start
+        st.session_state[range_state_key] = (default_start, default_end)
         if start_key not in st.session_state:
-            st.session_state[start_key] = st.session_state[range_state_key][0]
+            st.session_state[start_key] = default_start
         if end_key not in st.session_state:
-            st.session_state[end_key] = st.session_state[range_state_key][1]
+            st.session_state[end_key] = default_end
 
         current_start, current_end = st.session_state[range_state_key]
         start_col, end_col = st.columns(2)
@@ -588,12 +592,55 @@ def render_fact_sheet_tab() -> None:
         if metric_multi:
             plot_df = chart_df[chart_df["지표명"].isin(metric_multi)].set_index("지표명")[numeric_years].T
             filtered_plot = plot_df.loc[(plot_df.index >= year_range[0]) & (plot_df.index <= year_range[1])]
-            st.line_chart(filtered_plot)
+            line_data = (
+                filtered_plot.reset_index()
+                .rename(columns={"index": "year"})
+                .melt(id_vars="year", var_name="지표명", value_name="value")
+                .dropna(subset=["value"])
+            )
+
+            turning_rows: list[dict[str, object]] = []
+            for metric_name, series in filtered_plot.items():
+                series_clean = series.dropna()
+                if len(series_clean) < 3:
+                    continue
+                years = series_clean.index.astype(int).tolist()
+                values = series_clean.values.tolist()
+                for i in range(1, len(values) - 1):
+                    prev_val, curr_val, next_val = values[i - 1], values[i], values[i + 1]
+                    if (curr_val - prev_val) * (next_val - curr_val) < 0:
+                        turning_rows.append({"year": years[i], "지표명": metric_name, "value": curr_val})
+            turning_df = pd.DataFrame(turning_rows)
+
+            base_chart = (
+                alt.Chart(line_data)
+                .mark_line(point=True)
+                .encode(
+                    x=alt.X("year:O", title="연도"),
+                    y=alt.Y("value:Q", title="값"),
+                    color=alt.Color("지표명:N", title="지표"),
+                    tooltip=["year:O", "지표명:N", alt.Tooltip("value:Q", title="값")],
+                )
+                .properties(height=320)
+            )
+            chart = base_chart
+            if not turning_df.empty:
+                turning_layer = (
+                    alt.Chart(turning_df)
+                    .mark_point(shape="diamond", size=80, color="#222")
+                    .encode(
+                        x="year:O",
+                        y="value:Q",
+                        color=alt.Color("지표명:N", title="지표"),
+                        tooltip=["year:O", "지표명:N", alt.Tooltip("value:Q", title="값")],
+                    )
+                )
+                chart = base_chart + turning_layer
+            st.altair_chart(chart, use_container_width=True)
         else:
-            st.info("차트로 보고 싶은 지표를 선택해 주세요.")
+            st.info("차트로 보고 싶은 지표를 선택해 주세요")
     else:
         st.info("연도 데이터가 없어 차트를 그릴 수 없습니다.")
-
     st.markdown("#### 전체 Fact Sheet")
     combined_df = []
     for indicator_name in indicator_groups:
@@ -892,8 +939,8 @@ NAV_STRUCTURE = {
         ("Global Ranking", render_global_ranking_tab),
         ("Fact Sheet", render_fact_sheet_tab),
         ("전북대 논문 목록", render_publications_tab),
-        ("벤치마킹 대학 비안 (THE/QS)", render_benchmark_the_qs_tab),
-        ("벤치마킹 대학 비안 (SciVal)", render_benchmark_scival_tab),
+        ("벤치마킹 대학 비교 (THE/QS)", render_benchmark_the_qs_tab),
+        ("벤치마킹 대학 비교 (SciVal)", render_benchmark_scival_tab),
     ],
     "학문분야별 연구성과": [],
     "우수연구성과 선정": [],
