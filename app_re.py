@@ -883,46 +883,91 @@ def render_benchmark_scival_tab() -> None:
 def render_placeholder(section_name: str) -> None:
     st.info(f"{section_name} 섹션은 추후 구현 예정입니다.")
 
+
+
+
+
 NAV_STRUCTURE = {
     "전북대학교 현황": [
         ("Global Ranking", render_global_ranking_tab),
         ("Fact Sheet", render_fact_sheet_tab),
         ("전북대 논문 목록", render_publications_tab),
-        ("벤치마킹 대학 비교 (THE/QS)", render_benchmark_the_qs_tab),
-        ("벤치마킹 대학 비교 (SciVal)", render_benchmark_scival_tab),
+        ("벤치마킹 대학 비안 (THE/QS)", render_benchmark_the_qs_tab),
+        ("벤치마킹 대학 비안 (SciVal)", render_benchmark_scival_tab),
     ],
     "학문분야별 연구성과": [],
     "우수연구성과 선정": [],
     "연구지원 전략제언": [],
 }
 
+# 사이드바 네비게이션 (아코디언 스타일)
 with st.sidebar:
-    st.markdown('<div class="sidebar-nav-title">기준 연구영역</div>', unsafe_allow_html=True)
-    primary_section = st.selectbox(
-        "기준 연구영역",
-        list(NAV_STRUCTURE.keys()),
-        label_visibility="collapsed",
+    st.markdown(
+        '''
+        <style>
+        [data-testid="stSidebar"] div.stButton > button {
+            width: 100%;
+            text-align: left;
+            border-radius: 12px;
+            border: 1px solid #dce2ec;
+            background: linear-gradient(135deg, #f9fbff 0%, #f5f7fb 100%);
+            color: #1f2d4d;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.04);
+        }
+        [data-testid="stSidebar"] div.stButton > button:hover {
+            border-color: #c7d2e8;
+            background: #f2f5fa;
+        }
+        </style>
+        ''',
+        unsafe_allow_html=True,
     )
-    st.markdown('<div class="sidebar-nav-title">세부 페이지</div>', unsafe_allow_html=True)
-    secondary_options = NAV_STRUCTURE[primary_section]
-    if secondary_options:
-        secondary_labels = [label for label, _ in secondary_options]
-        secondary_label = st.radio(
-            "세부 페이지",
-            secondary_labels,
-            label_visibility="collapsed",
-            key=f"secondary-{primary_section}",
-        )
-    else:
-        secondary_label = None
-        st.markdown("준비 중입니다.", unsafe_allow_html=True)
+
+    st.markdown('<div class="sidebar-nav-title">기준 연구영역</div>', unsafe_allow_html=True)
+    primary_options = list(NAV_STRUCTURE.keys())
+    current_primary = st.session_state.get("nav-expanded", primary_options[0] if primary_options else "")
+    if current_primary not in primary_options and primary_options:
+        current_primary = primary_options[0]
+        st.session_state["nav-expanded"] = current_primary
+
+    secondary_label = st.session_state.get("nav-secondary")
+
+    with st.container():
+        for primary in primary_options:
+            is_open = primary == current_primary
+            arrow = "\u25bc" if is_open else "\u25b6"
+            btn_type = "primary" if is_open else "secondary"
+            if st.button(f"{arrow} {primary}", key=f"nav-primary-{primary}", type=btn_type):
+                st.session_state["nav-expanded"] = primary
+                current_primary = primary
+                secondary_label = None
+
+            if is_open:
+                secondary_options = NAV_STRUCTURE.get(primary, [])
+                if secondary_options:
+                    available_labels = [label for label, _ in secondary_options]
+                    if secondary_label not in available_labels:
+                        secondary_label = available_labels[0]
+                        st.session_state["nav-secondary"] = secondary_label
+                    for label, _ in secondary_options:
+                        btn_type = "primary" if label == secondary_label else "secondary"
+                        if st.button(f"\u00b7 {label}", key=f"nav-secondary-{primary}-{label}", type=btn_type):
+                            secondary_label = label
+                            st.session_state["nav-secondary"] = label
+                            st.session_state["nav-expanded"] = primary
+                else:
+                    st.markdown('<div style="margin-left: 0.5rem; color: #888;">준비 중입니다.</div>', unsafe_allow_html=True)
+
+primary_section = st.session_state.get("nav-expanded", primary_options[0] if primary_options else "")
+secondary_options = NAV_STRUCTURE.get(primary_section, [])
+secondary_label = st.session_state.get("nav-secondary") if secondary_options else None
 
 st.subheader(
-    f"{primary_section} · {secondary_label}" if secondary_label else primary_section
+    f"{primary_section} \u00b7 {secondary_label}" if secondary_label else primary_section
 )
 
 if secondary_label:
     renderer_map = {label: renderer for label, renderer in secondary_options}
-    renderer_map[secondary_label]()
+    renderer_map.get(secondary_label, secondary_options[0][1])()
 else:
     render_placeholder(primary_section)
