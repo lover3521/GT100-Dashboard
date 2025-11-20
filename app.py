@@ -1,18 +1,21 @@
-"""GT100 진입전략 대시보드 메인 애플리케이션."""
+﻿"""GT100 진입전략 대시보드 메인 애플리케이션."""
 
-import streamlit as st
-import pandas as pd
+import math
 from pathlib import Path
 
+import altair as alt
+import pandas as pd
+import streamlit as st
 
-# 기본 페이지 타이틀과 레이아웃을 지정해 전체 앱의 모습을 통일한다.
+
+# 기본 페이지 설정
 st.set_page_config(
     page_title="GT100 진입전략 대시보드",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# 사이드바 스타일을 커스터마이즈해 대시보드 톤앤매너를 맞춘다.
+# 사이드바 톤앤매너
 st.markdown(
     """
     <style>
@@ -30,61 +33,63 @@ st.markdown(
             margin-bottom: 0.8rem;
         }
         [data-testid="stSidebar"] div[role="radiogroup"] label {
-            padding: 0.25rem 0;
+            padding: 0.2rem 0;
             border-bottom: 1px solid #f0f0f0;
-        }
-        [data-testid="stSidebar"] div[role="radiogroup"] label p {
-            color: #c1121f;
-            font-weight: 600;
-            margin-left: 0.1rem;
-        }
-        [data-testid="stSidebar"] div[role="radiogroup"] label p::before {
-            content: "• ";
-            margin-right: 0.25rem;
         }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# 메인 헤더와 요약 설명으로 대시보드 목적을 명확히 안내합니다.
+# 헤더
 st.title("GT100 진입전략 대시보드")
 st.caption("전북대학교의 GT100 진입전략 수립을 지원하는 내부용 모니터링 페이지입니다.")
 
+# 상단 KPI
 summary_cols = st.columns(4)
 summary_metrics = [
-    ("THE 2026 순위", "801-1000위", "+0단계"),
-    ("QS 2026 순위", "701-710위", "-10단계"),
-    ("논문 수 (최근 5년)", "12,095편", "+15.5%"),
-    ("피인용 수 (최근 5년)", "158,624회", "2020-2024"),
+    {"label": "THE 2026 순위", "value": "801-1000위", "delta": "+0단계"},
+    {"label": "QS 2026 순위", "value": "701-710위", "delta": "-10단계"},
+    {"label": "논문 수 (최근 5년)", "value": "12,095편", "delta": "+15.5%"},
+    {
+        "label": "피인용 수 (최근 5년)",
+        "value": "158,624회",
+        "note": "2020-2024 누적 값",
+    },
 ]
-# KPI 카드들을 반복문으로 렌더링해 상단 요약을 구성한다.
-for col, (label, value, delta) in zip(summary_cols, summary_metrics):
-    col.metric(label, value, delta)
+for col, metric in zip(summary_cols, summary_metrics):
+    if "delta" in metric:
+        col.metric(metric["label"], metric["value"], metric["delta"])
+    else:
+        col.metric(metric["label"], metric["value"])
+    if note := metric.get("note"):
+        col.caption(note)
 
-# 구분선을 사용해 KPI 영역과 이하 콘텐츠를 분리한다.
 st.divider()
 
-# 배포 디렉터리 내 엑셀 파일을 기본 데이터 소스로 참조한다.
-FACT_SHEET_FILE = Path(__file__).with_name("\ud1b5\ud569 \ubb38\uc11c1.xlsx")
+# 데이터 소스 경로
+FACT_SHEET_FILE = Path(__file__).with_name("통합 문서1.xlsx")
+SCOPUS_EXPORT_FILE = Path(__file__).with_name(
+    "Publications_at_Jeonbuk_National_University_2020_-_2024.csv"
+)
 
-# 엑셀 미제공 시에도 데모가 가능하도록 하드코딩된 Fact Sheet 데이터.
+# 기본 Fact Sheet (엑셀 미제공 시 사용)
 EMBEDDED_FACT_SHEET = {
-    "\uc601\ud5a5\ub825(Impact)": [
+    "영향력(Impact)": [
         {
-            "label": "\ub17c\ubb38\uc218",
-            "unit": "",
-            "values": {2020: 2180.0, 2021: 2434.0, 2022: 2433.0, 2023: 2530.0, 2024: 2518.0},
+            "label": "논문수",
+            "unit": "편",
+            "values": {2020: 2180, 2021: 2434, 2022: 2433, 2023: 2530, 2024: 2518},
         },
         {
-            "label": "\ucd1d\uc778\uc6a9\uc218",
-            "unit": "",
-            "values": {2020: 48108.0, 2021: 44630.0, 2022: 31855.0, 2023: 23535.0, 2024: 10496.0},
+            "label": "총인용수",
+            "unit": "회",
+            "values": {2020: 48108, 2021: 44630, 2022: 31855, 2023: 23535, 2024: 10496},
         },
         {
-            "label": "\ub17c\ubb38\ub2f9 \ud3c9\uade0 \uc778\uc6a9\uc218",
-            "unit": "",
-            "values": {2020: 22.07, 2021: 18.34, 2022: 13.09, 2023: 9.3, 2024: 4.17},
+            "label": "논문당 평균 인용수",
+            "unit": "회",
+            "values": {2020: 22.07, 2021: 18.34, 2022: 13.09, 2023: 9.30, 2024: 4.17},
         },
         {
             "label": "FWCI",
@@ -92,149 +97,135 @@ EMBEDDED_FACT_SHEET = {
             "values": {2020: 1.06, 2021: 1.08, 2022: 1.11, 2023: 1.13, 2024: 1.09},
         },
         {
-            "label": "\ud53c\uc778\uc6a9 \ub17c\ubb38 \ube44\uc728",
-            "unit": "",
+            "label": "피인용 논문 비율",
+            "unit": "%",
             "values": {2020: 94.2, 2021: 93.8, 2022: 92.7, 2023: 88.6, 2024: 77.8},
         },
         {
-            "label": "\ub9e4\uccb4 \ub178\ucd9c \ubc0f \ubd84\uc57c \ub2e4\uc591\uc131",
+            "label": "매체 노출 및 분야 다양성",
             "unit": "",
-            "values": {2020: 390.0, 2021: 183.0, 2022: 115.0, 2023: 159.0},
+            "values": {2020: 390, 2021: 183, 2022: 115, 2023: 159, 2024: None},
         },
     ],
-    "\uc6b0\uc218\uc131(Excellence)": [
+    "우수성(Excellence)": [
         {
-            "label": "\uc0c1\uc704 1% \ub17c\ubb38 \uc218",
-            "unit": "",
-            "values": {2020: 14.0, 2021: 29.0, 2022: 24.0, 2023: 34.0, 2024: 32.0},
+            "label": "상위 1% 논문 수",
+            "unit": "편",
+            "values": {2020: 14, 2021: 29, 2022: 24, 2023: 34, 2024: 32},
         },
         {
-            "label": "\uc0c1\uc704 1% \ub17c\ubb38 \ube44\uc728",
-            "unit": "",
+            "label": "상위 1% 논문 비율",
+            "unit": "%",
             "values": {2020: 0.7, 2021: 1.3, 2022: 1.1, 2023: 1.5, 2024: 1.4},
         },
         {
-            "label": "\uc0c1\uc704 10% \ub17c\ubb38 \uc218",
-            "unit": "",
-            "values": {2020: 269.0, 2021: 263.0, 2022: 309.0, 2023: 331.0, 2024: 315.0},
+            "label": "상위 10% 논문 수",
+            "unit": "편",
+            "values": {2020: 269, 2021: 263, 2022: 309, 2023: 331, 2024: 315},
         },
         {
-            "label": "\uc0c1\uc704 10% \ub17c\ubb38 \ube44\uc728",
-            "unit": "",
+            "label": "상위 10% 논문 비율",
+            "unit": "%",
             "values": {2020: 13.3, 2021: 11.7, 2022: 13.6, 2023: 14.2, 2024: 13.5},
         },
         {
-            "label": "\uc0c1\uc704 10% \uc800\ub110 \ub17c\ubb38 \uc218",
-            "unit": "",
-            "values": {2020: 560.0, 2021: 732.0, 2022: 696.0, 2023: 821.0, 2024: 884.0},
+            "label": "Q1 저널 논문 수",
+            "unit": "편",
+            "values": {2020: 1048, 2021: 1274, 2022: 1374, 2023: 1498, 2024: 1590},
         },
         {
-            "label": "\uc0c1\uc704 10% \uc800\ub110 \ub17c\ubb38 \ube44\uc728",
-            "unit": "",
-            "values": {2020: 28.4, 2021: 33.0, 2022: 30.9, 2023: 35.6, 2024: 38.0},
-        },
-        {
-            "label": "Q1 \uc800\ub110 \ub17c\ubb38 \uc218",
-            "unit": "",
-            "values": {2020: 1048.0, 2021: 1274.0, 2022: 1374.0, 2023: 1498.0, 2024: 1590.0},
-        },
-        {
-            "label": "Q1 \uc800\ub110 \ub17c\ubb38 \ube44\uc728",
-            "unit": "",
+            "label": "Q1 저널 논문 비율",
+            "unit": "%",
             "values": {2020: 53.1, 2021: 57.5, 2022: 61.1, 2023: 65.0, 2024: 68.3},
         },
     ],
-    "\uacf5\ub3d9\ud611\ub825(Collaboration)": [
+    "협력(Collaboration)": [
         {
-            "label": "\uad6d\uc81c \uacf5\ub3d9\uc5f0\uad6c \ub17c\ubb38 \uc218",
-            "unit": "",
-            "values": {2020: 618.0, 2021: 700.0, 2022: 706.0, 2023: 768.0, 2024: 768.0},
+            "label": "국제 공동연구 논문 수",
+            "unit": "편",
+            "values": {2020: 618, 2021: 700, 2022: 706, 2023: 768, 2024: 768},
         },
         {
-            "label": "\uad6d\uc81c \uacf5\ub3d9\uc5f0\uad6c \ub17c\ubb38 \ube44\uc728",
-            "unit": "",
+            "label": "국제 공동연구 논문 비율",
+            "unit": "%",
             "values": {2020: 30.5, 2021: 31.1, 2022: 31.0, 2023: 33.0, 2024: 32.8},
         },
         {
-            "label": "\uad6d\uc81c \uacf5\ub3d9\uc5f0\uad6c FWCI",
+            "label": "국제 공동연구 FWCI",
             "unit": "",
-            "values": {2020: 0.67, 2021: 0.7, 2022: 0.71, 2023: 0.75, 2024: 0.75},
+            "values": {2020: 0.67, 2021: 0.70, 2022: 0.71, 2023: 0.75, 2024: 0.75},
         },
         {
-            "label": "\uad6d\ub0b4 \uacf5\ub3d9\uc5f0\uad6c \ub17c\ubb38 \uc218",
-            "unit": "",
-            "values": {2020: 898.0, 2021: 1005.0, 2022: 993.0, 2023: 1017.0, 2024: 1018.0},
+            "label": "국내 공동연구 논문 수",
+            "unit": "편",
+            "values": {2020: 898, 2021: 1005, 2022: 993, 2023: 1017, 2024: 1018},
         },
         {
-            "label": "\uad6d\ub0b4 \uacf5\ub3d9\uc5f0\uad6c \ub17c\ubb38 \ube44\uc728",
-            "unit": "",
+            "label": "국내 공동연구 논문 비율",
+            "unit": "%",
             "values": {2020: 44.3, 2021: 44.7, 2022: 43.6, 2023: 43.7, 2024: 43.5},
         },
         {
-            "label": "\uc778\uc6a9 \uad6d\uac00 \uc218",
-            "unit": "",
-            "values": {2020: 166.0, 2021: 165.0, 2022: 161.0, 2023: 159.0, 2024: 141.0},
+            "label": "인용 국가 수",
+            "unit": "개",
+            "values": {2020: 166, 2021: 165, 2022: 161, 2023: 159, 2024: 141},
         },
     ],
-    "\uacf5\uacf5\uc131 \ubc0f \uac1c\ubc29\uc131\n(Public Engagement and Openness)": [
+    "공공성 및 개방성": [
         {
-            "label": "\uc624\ud508 \uc561\uc138\uc2a4 \ub17c\ubb38 \uc218",
-            "unit": "",
-            "values": {2020: 1076.0, 2021: 1297.0, 2022: 1310.0, 2023: 1340.0, 2024: 1282.0},
+            "label": "오픈 액세스 논문 수",
+            "unit": "편",
+            "values": {2020: 1076, 2021: 1297, 2022: 1310, 2023: 1340, 2024: 1282},
         },
         {
-            "label": "\uc624\ud508 \uc561\uc138\uc2a4 \ub17c\ubb38 \ube44\uc728",
-            "unit": "",
+            "label": "오픈 액세스 논문 비율",
+            "unit": "%",
             "values": {2020: 49.36, 2021: 53.29, 2022: 53.84, 2023: 52.96, 2024: 50.91},
         },
         {
-            "label": "\uc5f4\ub78c \uc218",
-            "unit": "",
-            "values": {2020: 58142.0, 2021: 70857.0, 2022: 54029.0, 2023: 55552.0, 2024: 36628.0},
+            "label": "열람 수",
+            "unit": "건",
+            "values": {2020: 58142, 2021: 70857, 2022: 54029, 2023: 55552, 2024: 36628},
         },
         {
-            "label": "\ubbf8\ub514\uc5b4 \uc778\uc6a9 \uc218",
-            "unit": "",
-            "values": {2020: 15.0, 2021: 17.0, 2022: 9.0, 2023: 19.0, 2024: 8.0},
+            "label": "미디어 인용 수",
+            "unit": "건",
+            "values": {2020: 15, 2021: 17, 2022: 9, 2023: 19, 2024: 8},
         },
         {
-            "label": "\uc8fc\uc81c \ubd84\uc57c \uc218",
-            "unit": "",
-            "values": {2020: 277.0, 2021: 281.0, 2022: 284.0, 2023: 292.0, 2024: 285.0},
+            "label": "주제 분야 수",
+            "unit": "개",
+            "values": {2020: 277, 2021: 281, 2022: 284, 2023: 292, 2024: 285},
         },
     ],
 }
 
 
 def _looks_like_year(label: object) -> bool:
-    """단순한 규칙을 이용해 컬럼명이 연도인지 판별한다."""
     label_str = str(label)
     return label_str.isdigit() and 1900 <= int(label_str) <= 2100
 
 
 def build_fact_sheet_df_from_embedded() -> pd.DataFrame:
-    """EMBEDDED_FACT_SHEET 딕셔너리를 DataFrame 형태로 가공한다."""
     records: list[dict[str, object]] = []
     for indicator_group, entries in EMBEDDED_FACT_SHEET.items():
         for entry in entries:
             row: dict[str, object] = {
                 "indicator_group": indicator_group,
-                "????": entry["label"],
-                "??": entry.get("unit", "") or "-",
+                "지표명": entry["label"],
+                "단위": entry.get("unit", "") or "-",
             }
             for year, value in entry["values"].items():
                 try:
-                    year_key = int(year)
+                    row[int(year)] = value
                 except (TypeError, ValueError):
                     continue
-                row[year_key] = value
             records.append(row)
     return pd.DataFrame(records)
 
 
 @st.cache_data
 def load_fact_sheet_data(xlsx_path: str) -> pd.DataFrame:
-    """로컬 엑셀 파일을 읽고, 실패하면 임베디드 데이터를 반환한다."""
     try:
         raw_df = pd.read_excel(xlsx_path)
     except Exception:
@@ -243,90 +234,78 @@ def load_fact_sheet_data(xlsx_path: str) -> pd.DataFrame:
         return build_fact_sheet_df_from_embedded()
 
     category_col, indicator_col = raw_df.columns[:2]
-    trimmed_df = raw_df.copy()
-    sustainability_mask = trimmed_df[indicator_col].astype(str).str.contains(
-        "Sustainability", case=False, na=False
-    )
-    if sustainability_mask.any():
-        stop_idx = int(sustainability_mask[sustainability_mask].index[0])
-        trimmed_df = trimmed_df.loc[: stop_idx - 1]
-
-    fact_df = trimmed_df.rename(
-        columns={category_col: "indicator_group", indicator_col: "????"}
-    )
+    fact_df = raw_df.rename(columns={category_col: "indicator_group", indicator_col: "지표명"})
     fact_df["indicator_group"] = fact_df["indicator_group"].ffill()
 
-    candidate_years = [col for col in fact_df.columns if _looks_like_year(col)]
     year_columns: list[int] = []
-    for column in candidate_years:
-        year = int(column)
-        fact_df[year] = pd.to_numeric(fact_df[column], errors="coerce")
-        if year not in year_columns:
+    for column in fact_df.columns[2:]:
+        if _looks_like_year(column):
+            year = int(column)
+            fact_df[year] = pd.to_numeric(fact_df[column], errors="coerce")
             year_columns.append(year)
-        if column != year:
-            fact_df = fact_df.drop(columns=[column])
-    year_columns = sorted(set(year_columns))
+            if column != year:
+                fact_df = fact_df.drop(columns=[column])
 
-    total_column = next(
-        (
-            col
-            for col in fact_df.columns
-            if isinstance(col, str) and "5" in col and ("?" in col or "?" in col)
-        ),
-        None,
-    )
+    if "단위" not in fact_df.columns:
+        fact_df["단위"] = "-"
 
-    base_columns = ["indicator_group", "????"] + year_columns
-    if total_column:
-        base_columns.append(total_column)
-    fact_df = fact_df[base_columns].dropna(subset=["????"])
-    fact_df["??"] = "-"
-
-    ordered_columns = ["indicator_group", "????", "??"] + year_columns
-    if total_column:
-        ordered_columns.append(total_column)
-    fact_df = fact_df[ordered_columns]
-    if year_columns:
-        valid_mask = fact_df[year_columns].notna().any(axis=1)
-        fact_df = fact_df[valid_mask]
-    if fact_df.empty:
-        return build_fact_sheet_df_from_embedded()
+    base_columns = ["indicator_group", "지표명", "단위"] + sorted(set(year_columns))
+    fact_df = fact_df[base_columns]
     return fact_df.reset_index(drop=True)
 
 
 def get_fact_sheet_dataframe() -> pd.DataFrame:
-    """엑셀 파일 존재 여부에 따라 Fact Sheet DataFrame을 확보한다."""
     if not FACT_SHEET_FILE.exists():
         return build_fact_sheet_df_from_embedded()
     return load_fact_sheet_data(str(FACT_SHEET_FILE))
 
 
 def get_fact_sheet_year_columns(fact_df: pd.DataFrame) -> list[int]:
-    """연도로 해석되는 컬럼만 모아 정렬된 리스트를 만든다."""
     return sorted(col for col in fact_df.columns if isinstance(col, int))
 
 
-def get_fact_sheet_extra_columns(fact_df: pd.DataFrame) -> list[str]:
-    """추가 메타데이터 컬럼명을 추출해 테이블 표시 순서를 제어한다."""
-    return [
-        col
-        for col in fact_df.columns
-        if isinstance(col, str) and col not in {"indicator_group", "????", "??"}
-    ]
-
-
 def build_indicator_dataframe(fact_df: pd.DataFrame, indicator: str) -> pd.DataFrame:
-    """선택한 indicator_group에 해당하는 지표 행들만 필터링한다."""
     if fact_df.empty:
         return pd.DataFrame()
     year_columns = get_fact_sheet_year_columns(fact_df)
-    extra_columns = get_fact_sheet_extra_columns(fact_df)
-    display_columns = ["????", "??"] + year_columns + extra_columns
+    display_columns = ["지표명", "단위"] + year_columns
     subset = fact_df[fact_df["indicator_group"] == indicator][display_columns].copy()
     return subset.reset_index(drop=True)
 
 
-# 가상의 비교 대학 배수를 정의해 SciVal 벤치마킹 시뮬레이션을 만든다.
+def rank_range_to_midpoint(value: object) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        cleaned = value.replace("위", "").strip()
+        if "-" in cleaned:
+            low, high = cleaned.split("-", 1)
+            try:
+                return (float(low) + float(high)) / 2
+            except ValueError:
+                return None
+        try:
+            return float(cleaned)
+        except ValueError:
+            return None
+    return None
+
+
+def describe_rank_delta(current: object, previous: object) -> str | None:
+    current_mid = rank_range_to_midpoint(current)
+    previous_mid = rank_range_to_midpoint(previous)
+    if current_mid is None or previous_mid is None:
+        return None
+    diff = previous_mid - current_mid
+    diff_value = int(round(abs(diff)))
+    if diff_value == 0:
+        return None
+    direction = "개선" if diff > 0 else "하락"
+    return f"{diff_value}위 {direction}"
+
+
 SCIVAL_BENCHMARK_MULTIPLIERS = {
     "전북대": 1.00,
     "University A": 1.12,
@@ -335,12 +314,11 @@ SCIVAL_BENCHMARK_MULTIPLIERS = {
 
 
 def build_scival_benchmark_dataframe(year: int, fact_df: pd.DataFrame) -> pd.DataFrame:
-    """연도별 Fact Sheet 값을 가중치와 함께 피벗해 비교 테이블을 만든다."""
     columns = []
     data = {uni: [] for uni in SCIVAL_BENCHMARK_MULTIPLIERS}
     for _, row in fact_df.iterrows():
-        unit = row.get("??", "")
-        label = row["????"]
+        unit = row.get("단위", "")
+        label = row["지표명"]
         label_with_unit = f"{label} ({unit})" if unit and unit != "-" else label
         columns.append((row["indicator_group"], label_with_unit))
         base_value = row.get(year)
@@ -350,63 +328,88 @@ def build_scival_benchmark_dataframe(year: int, fact_df: pd.DataFrame) -> pd.Dat
             else:
                 value = None
             data[uni].append(value)
-    multi_columns = pd.MultiIndex.from_tuples(columns, names=["????", "????"])
+    multi_columns = pd.MultiIndex.from_tuples(columns, names=["분야", "지표"])
     universities = list(SCIVAL_BENCHMARK_MULTIPLIERS.keys())
     values = [data[uni] for uni in universities]
     df = pd.DataFrame(values, columns=multi_columns, index=universities)
-    df.index.name = "??"
+    df.index.name = "기관"
     return df
 
 
 def render_global_ranking_tab() -> None:
-    """THE/QS 순위를 간단한 지표와 라인차트로 보여준다."""
     st.subheader("Global Ranking")
     ranking_df = pd.DataFrame(
-        {
-            "연도": [2020, 2021, 2022, 2023, 2024],
-            "THE": [601, 601, 551, 501, 475],
-            "QS": [651, 601, 571, 551, 505],
-        }
+        [
+            {"연도": 2022, "THE": "1001-1200", "QS": "571-580"},
+            {"연도": 2023, "THE": "1001-1200", "QS": "551-560"},
+            {"연도": 2024, "THE": "801-1000", "QS": "721-730"},
+            {"연도": 2025, "THE": "801-1000", "QS": "681-690"},
+            {"연도": 2026, "THE": "801-1000", "QS": "701-710"},
+        ]
     )
-    source = st.selectbox("평가 체계 선택", ["THE", "QS"])
+    ranking_df["THE_value"] = ranking_df["THE"].apply(rank_range_to_midpoint)
+    ranking_df["QS_value"] = ranking_df["QS"].apply(rank_range_to_midpoint)
+
     cols = st.columns(2)
-    the_latest = ranking_df.iloc[-1]["THE"]
-    qs_latest = ranking_df.iloc[-1]["QS"]
-    cols[0].metric("THE 2024", f"{int(the_latest)}위", "-26 단계 개선")
-    cols[1].metric("QS 2024", f"{int(qs_latest)}위", "-46 단계 개선")
-    st.line_chart(ranking_df.set_index("연도")[["THE", "QS"]])
-    st.dataframe(
-        ranking_df,
-        use_container_width=True,
-        hide_index=True,
-    )
-    st.info(f"{source} 상세 분석과 세부 지표는 추후 연동 예정입니다.")
+    the_delta = describe_rank_delta(ranking_df.iloc[-1]["THE"], ranking_df.iloc[-2]["THE"])
+    qs_delta = describe_rank_delta(ranking_df.iloc[-1]["QS"], ranking_df.iloc[-2]["QS"])
+    cols[0].metric("THE 2026", ranking_df.iloc[-1]["THE"], the_delta)
+    cols[1].metric("QS 2026", ranking_df.iloc[-1]["QS"], qs_delta)
+
+    chart_records: list[dict[str, object]] = []
+    for _, row in ranking_df.iterrows():
+        for scheme in ("THE", "QS"):
+            numeric_value = row[f"{scheme}_value"]
+            if numeric_value is None:
+                continue
+            chart_records.append(
+                {
+                    "연도": row["연도"],
+                    "평가": scheme,
+                    "rank_value": numeric_value,
+                    "원본 구간": row[scheme],
+                }
+            )
+    if chart_records:
+        chart_df = pd.DataFrame(chart_records)
+        chart = (
+            alt.Chart(chart_df)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("연도:O", title="연도"),
+                y=alt.Y(
+                    "rank_value:Q",
+                    title="순위 (낮을수록 우수)",
+                    scale=alt.Scale(reverse=True),
+                ),
+                color=alt.Color(
+                    "평가:N",
+                    title="평가 체계",
+                    scale=alt.Scale(domain=["THE", "QS"], range=["#ec008c", "#f5a623"]),
+                ),
+                tooltip=["연도:O", "평가:N", "원본 구간:N", alt.Tooltip("rank_value:Q", title="대표값")],
+            )
+            .properties(height=320)
+        )
+        st.altair_chart(chart, use_container_width=True)
+    st.dataframe(ranking_df[["연도", "THE", "QS"]], use_container_width=True, hide_index=True)
 
 
 def render_fact_sheet_tab() -> None:
-    """Fact Sheet 데이터의 요약, 상세 테이블, 추이 차트를 렌더링한다."""
     st.subheader("Fact Sheet")
     metric_cols = st.columns(3)
     summary_metrics = [
-        ("학생 수", "28,450명", "+1.2%"),
-        ("교원 수", "1,760명", "+0.9%"),
-        ("연구비", "4,280억원", "+3.9%"),
+        ("재학생 수", "28,450명", "+1.2%"),
+        ("전임교원 수", "1,760명", "+0.9%"),
+        ("R&D 투자", "4,280억원", "+3.9%"),
     ]
     for col, (label, value, delta) in zip(metric_cols, summary_metrics):
         col.metric(label, value, delta)
 
-    try:
-        fact_df = get_fact_sheet_dataframe()
-    except Exception as exc:
-        st.error(f"Fact Sheet 데이터를 불러오지 못했습니다: {exc}")
-        return
-
+    fact_df = get_fact_sheet_dataframe()
     if fact_df.empty:
-        st.warning("Fact Sheet 데이터를 준비할 수 없습니다.")
+        st.warning("표시할 Fact Sheet 데이터가 없습니다.")
         return
-
-    if not FACT_SHEET_FILE.exists():
-        st.info("통합 문서1.xlsx 연결에 실패하여 내장 데이터를 사용 중입니다.")
 
     indicator_groups = fact_df["indicator_group"].dropna().unique().tolist()
     year_columns = get_fact_sheet_year_columns(fact_df)
@@ -416,16 +419,44 @@ def render_fact_sheet_tab() -> None:
 
     st.markdown("#### 지표 상세 보기")
     detail_indicator = st.selectbox(
-        "지표(Indicator) 선택",
+        "지표 그룹 선택",
         indicator_groups,
         key="fact-detail-indicator",
     )
     detail_df = build_indicator_dataframe(fact_df, detail_indicator)
-    st.dataframe(detail_df, use_container_width=True, hide_index=True)
+    if detail_df.empty:
+        st.info("해당 지표 그룹 데이터가 없습니다.")
+    else:
+        detail_display = detail_df.copy()
+        palette_cycle = ["#fde9f4", "#eef6ff", "#fef5e5", "#f3f9ef", "#f1e9ff"]
+        group_palette = {g: palette_cycle[i % len(palette_cycle)] for i, g in enumerate(indicator_groups)}
+        if "단위" in detail_display.columns:
+            detail_display["지표명"] = detail_display.apply(
+                lambda row: (
+                    row["지표명"]
+                    if row.get("단위") in ("", "-", None)
+                    else f"{row['지표명']} ({row['단위']})"
+                ),
+                axis=1,
+            )
+            detail_display = detail_display.drop(columns=["단위"], errors="ignore")
+        detail_years = [c for c in detail_display.columns if isinstance(c, int)]
+        if detail_years:
+            detail_display[detail_years] = detail_display[detail_years].applymap(
+                lambda v: "-" if pd.isna(v) else (f"{int(v):,}" if float(v).is_integer() else f"{float(v):,.2f}")
+            )
+        detail_color = group_palette.get(detail_indicator, "#fafafa")
+        def _detail_highlight(_row: pd.Series) -> list[str]:
+            return [f"background-color: {detail_color}"] * len(detail_display.columns)
+        st.dataframe(
+            detail_display.style.apply(_detail_highlight, axis=1),
+            use_container_width=True,
+            hide_index=True,
+        )
 
     st.markdown("#### 지표 추이 차트")
     chart_indicator = st.selectbox(
-        "차트용 지표 그룹",
+        "차트 지표 그룹",
         indicator_groups,
         key="fact-chart-indicator",
     )
@@ -440,25 +471,25 @@ def render_fact_sheet_tab() -> None:
             value=(year_min, year_max),
             step=1,
         )
+        c1, c2 = st.columns(2)
+        start_input = c1.number_input("시작 연도", min_value=year_min, max_value=year_max, value=year_range[0], step=1)
+        end_input = c2.number_input("종료 연도", min_value=year_min, max_value=year_max, value=year_range[1], step=1)
+        if start_input > end_input:
+            start_input, end_input = end_input, start_input
+        year_range = (start_input, end_input)
         metric_multi = st.multiselect(
             "차트 지표 선택",
-            chart_df["????"],
-            default=list(chart_df["????"][: min(2, len(chart_df))]),
+            chart_df["지표명"],
+            default=list(chart_df["지표명"][: min(2, len(chart_df))]),
         )
         if metric_multi:
-            plot_df = (
-                chart_df[chart_df["????"].isin(metric_multi)]
-                .set_index("????")[numeric_years]
-                .T
-            )
-            filtered_plot = plot_df.loc[
-                (plot_df.index >= year_range[0]) & (plot_df.index <= year_range[1])
-            ]
+            plot_df = chart_df[chart_df["지표명"].isin(metric_multi)].set_index("지표명")[numeric_years].T
+            filtered_plot = plot_df.loc[(plot_df.index >= year_range[0]) & (plot_df.index <= year_range[1])]
             st.line_chart(filtered_plot)
         else:
             st.info("차트로 보고 싶은 지표를 선택해 주세요.")
     else:
-        st.info("표에 연도 데이터가 없어 차트를 그릴 수 없습니다.")
+        st.info("연도 데이터가 없어 차트를 그릴 수 없습니다.")
 
     st.markdown("#### 전체 Fact Sheet")
     combined_df = []
@@ -467,64 +498,227 @@ def render_fact_sheet_tab() -> None:
         if df.empty:
             continue
         df = df.copy()
-        if "????" in df.columns:
-            df = df.drop(columns=["????"])
-        df.insert(0, "????", indicator_name)
+        df.insert(0, "지표 그룹", indicator_name)
         combined_df.append(df)
     if combined_df:
         master_df = pd.concat(combined_df, ignore_index=True)
-        st.dataframe(master_df, use_container_width=True, hide_index=True)
+        display_df = master_df.reset_index(drop=True)
+        year_cols = [c for c in display_df.columns if isinstance(c, int)]
+
+        def format_value(val: object) -> object:
+            if pd.isna(val):
+                return "-"
+            try:
+                num = float(val)
+            except (TypeError, ValueError):
+                return val
+            if num.is_integer():
+                return f"{int(num):,}"
+            return f"{num:,.2f}"
+
+        if year_cols:
+            display_df[year_cols] = display_df[year_cols].applymap(format_value)
+
+        display_df["지표명"] = display_df.apply(
+            lambda row: row["지표명"] if row.get("단위") in ("", "-", None) else f"{row['지표명']} ({row['단위']})",
+            axis=1,
+        )
+        display_df = display_df.drop(columns=["단위"], errors="ignore")
+
+        display_df["__group"] = display_df["지표 그룹"]
+        display_df["지표 그룹"] = display_df["지표 그룹"].where(~display_df["지표 그룹"].duplicated(), "")
+
+        palette_cycle = ["#fde9f4", "#eef6ff", "#fef5e5", "#f3f9ef", "#f1e9ff"]
+        group_palette = {g: palette_cycle[i % len(palette_cycle)] for i, g in enumerate(indicator_groups)}
+        color_series = display_df["__group"].map(group_palette).fillna("#fafafa")
+
+        def highlight_group(row: pd.Series) -> list[str]:
+            color = color_series[row.name]
+            return [f"background-color: {color}"] * len(row)
+
+        styled_df = (
+            display_df.drop(columns=["__group"])
+            .style.apply(highlight_group, axis=1)
+            .set_properties(subset=["지표 그룹"], **{"font-weight": "600"})
+        )
+        st.dataframe(styled_df, use_container_width=True, hide_index=True)
     else:
         st.info("표시할 Fact Sheet 데이터가 없습니다.")
-    st.caption("※ 지표·세부지표 단위는 컬럼명에 괄호로 표기되어 있습니다.")
+    st.caption("지표명 뒤 괄호 안에 단위를 표시했습니다.")
 
 
-def render_publications_tab() -> None:
-    """?? ?? ???? ??????? ???? ????."""
-    st.subheader("전북대 논문 목록")
-    sample_papers = pd.DataFrame(
+@st.cache_data
+def load_publication_csv(csv_path: str) -> pd.DataFrame:
+    """Scopus에서 내려받은 CSV를 읽는다(인코딩 자동 판별)."""
+    try:
+        return pd.read_csv(csv_path, encoding="utf-8")
+    except UnicodeDecodeError:
+        return pd.read_csv(csv_path, encoding="cp949")
+
+
+def _build_sample_publications() -> pd.DataFrame:
+    """Scopus 데이터를 사용할 수 없을 때 쓰는 예시 데이터."""
+    return pd.DataFrame(
         [
             {
                 "논문명": "Smart Agriculture using AI",
-                "저널": "Nature Food",
-                "발행연도": 2024,
-                "분야": "농생명",
+                "저널/컨퍼런스": "Nature Food",
+                "발행년도": 2024,
+                "문서 유형": "Article",
                 "피인용수": 42,
+                "저자": "Kim et al.",
+                "DOI": "-",
+                "링크": "-",
             },
             {
                 "논문명": "Energy Storage Materials",
-                "저널": "Advanced Energy Materials",
-                "발행연도": 2023,
-                "분야": "공학",
+                "저널/컨퍼런스": "Advanced Energy Materials",
+                "발행년도": 2023,
+                "문서 유형": "Article",
                 "피인용수": 55,
-            },
-            {
-                "논문명": "Carbon Neutral Cities",
-                "저널": "Renewable Energy",
-                "발행연도": 2022,
-                "분야": "환경",
-                "피인용수": 33,
-            },
-            {
-                "논문명": "Precision Medicine Pipeline",
-                "저널": "Lancet Digital Health",
-                "발행연도": 2024,
-                "분야": "의생명",
-                "피인용수": 29,
+                "저자": "Lee et al.",
+                "DOI": "-",
+                "링크": "-",
             },
         ]
     )
-    year_range = st.slider("발행연도", 2020, 2024, (2022, 2024))
-    fields = st.multiselect(
-        "연구 분야",
-        options=sorted(sample_papers["분야"].unique()),
-        default=sorted(sample_papers["분야"].unique()),
+
+
+def get_publications_dataframe() -> pd.DataFrame:
+    """전북대 논문 목록을 반환한다."""
+    if SCOPUS_EXPORT_FILE.exists():
+        try:
+            raw_df = load_publication_csv(str(SCOPUS_EXPORT_FILE))
+        except Exception:
+            raw_df = pd.DataFrame()
+    else:
+        raw_df = pd.DataFrame()
+
+    if raw_df.empty:
+        return _build_sample_publications()
+
+    df = pd.DataFrame(
+        {
+            "논문명": raw_df.get("Title", ""),
+            "저널/컨퍼런스": raw_df.get("Scopus Source title", "").fillna("미상"),
+            "발행년도": pd.to_numeric(raw_df.get("Year"), errors="coerce"),
+            "문서 유형": raw_df.get("Publication type", "").fillna("기타"),
+            "피인용수": pd.to_numeric(raw_df.get("Citations"), errors="coerce"),
+            "저자": raw_df.get("Authors", "").fillna("-"),
+            "DOI": raw_df.get("DOI", "").fillna("-"),
+            "링크": raw_df.get("Publication link to Topic strength", "").fillna("-"),
+        }
     )
-    filtered = sample_papers[
-        sample_papers["발행연도"].between(year_range[0], year_range[1])
-        & sample_papers["분야"].isin(fields)
+    df = df.dropna(subset=["발행년도"]).copy()
+    df["발행년도"] = df["발행년도"].astype(int)
+    df["피인용수"] = df["피인용수"].fillna(0).astype(int)
+    df["논문명"] = df["논문명"].replace("", "-")
+    df["저널/컨퍼런스"] = df["저널/컨퍼런스"].replace("", "미상")
+    df["문서 유형"] = df["문서 유형"].replace("", "기타")
+    df["DOI"] = df["DOI"].replace("", "-")
+    df["링크"] = df["링크"].replace("", "-")
+    return df.reset_index(drop=True)
+
+
+def render_publications_tab() -> None:
+    """전북대 논문 목록 표시."""
+    st.subheader("전북대 논문 목록")
+    publications_df = get_publications_dataframe()
+    if publications_df.empty:
+        st.info("표시할 논문 데이터가 없습니다.")
+        return
+
+    data_min = int(publications_df["발행년도"].min())
+    data_max = int(publications_df["발행년도"].max())
+    slider_min = min(2020, data_min)
+    slider_max = max(2024, data_max)
+    year_range = st.slider(
+        "발행년도",
+        slider_min,
+        slider_max,
+        (slider_min, slider_max),
+    )
+
+    doc_types = sorted(publications_df["문서 유형"].dropna().unique().tolist())
+    selected_types = st.multiselect(
+        "문서 유형",
+        options=doc_types,
+        default=doc_types,
+    )
+    page_size = st.selectbox(
+        "페이지 당 표시 건수",
+        options=[10, 50, 100],
+        index=0,
+    )
+
+    filtered = publications_df[
+        publications_df["발행년도"].between(year_range[0], year_range[1])
+        & publications_df["문서 유형"].isin(selected_types)
     ]
-    st.dataframe(filtered, use_container_width=True, hide_index=True)
+
+    if filtered.empty:
+        st.info("조건에 맞는 논문이 없습니다.")
+        return
+
+    filter_signature = (year_range, tuple(sorted(selected_types)), page_size)
+    page_state_key = "publications_page"
+    signature_key = "publications_page_signature"
+    if st.session_state.get(signature_key) != filter_signature:
+        st.session_state[page_state_key] = 1
+        st.session_state[signature_key] = filter_signature
+
+    total_pages = max(1, math.ceil(len(filtered) / page_size))
+    current_page = st.session_state.get(page_state_key, 1)
+    current_page = max(1, min(current_page, total_pages))
+    st.session_state[page_state_key] = current_page
+
+    start_idx = (current_page - 1) * page_size
+    end_idx = start_idx + page_size
+    page_df = filtered.iloc[start_idx:end_idx]
+
+    navbar = st.container()
+    if total_pages > 1:
+        num_buttons = min(5, total_pages)
+        window_start = max(1, current_page - num_buttons // 2)
+        window_end = min(total_pages, window_start + num_buttons - 1)
+        window_start = max(1, window_end - num_buttons + 1)
+        page_numbers = list(range(window_start, window_end + 1))
+        cols = navbar.columns(len(page_numbers) + 4)
+        if cols[0].button("« 처음", disabled=current_page == 1):
+            st.session_state[page_state_key] = 1
+            st.experimental_rerun()
+        if cols[1].button("‹ 이전", disabled=current_page == 1):
+            st.session_state[page_state_key] = current_page - 1
+            st.experimental_rerun()
+        for idx, page_num in enumerate(page_numbers):
+            if cols[idx + 2].button(str(page_num), disabled=page_num == current_page):
+                st.session_state[page_state_key] = page_num
+                st.experimental_rerun()
+        if cols[-2].button("다음 ›", disabled=current_page == total_pages):
+            st.session_state[page_state_key] = current_page + 1
+            st.experimental_rerun()
+        if cols[-1].button("마지막 »", disabled=current_page == total_pages):
+            st.session_state[page_state_key] = total_pages
+            st.experimental_rerun()
+
+    table_height = min(900, 160 + page_size * 35)
+    display_columns = [
+        "발행년도",
+        "문서 유형",
+        "논문명",
+        "저널/컨퍼런스",
+        "저자",
+        "피인용수",
+        "DOI",
+        "링크",
+    ]
+    st.dataframe(
+        page_df[display_columns],
+        use_container_width=True,
+        hide_index=True,
+        height=table_height,
+    )
+    st.caption(f"총 {len(filtered):,}건 · 페이지 {current_page}/{total_pages}")
     st.download_button(
         "CSV 다운로드",
         filtered.to_csv(index=False).encode("utf-8-sig"),
@@ -534,7 +728,6 @@ def render_publications_tab() -> None:
 
 
 def render_benchmark_the_qs_tab() -> None:
-    """THE/QS 지표를 기준으로 경쟁 대학과 막대 차트를 비교한다."""
     st.subheader("벤치마킹 대학 비교 (THE/QS)")
     comparison_df = pd.DataFrame(
         [
@@ -544,7 +737,7 @@ def render_benchmark_the_qs_tab() -> None:
             {"대학": "University A", "지표": "연구(Research)", "THE": 40.2, "QS": 36.8},
         ]
     )
-    indicator = st.selectbox("평가 지표", sorted(comparison_df["지표"].unique()))
+    indicator = st.selectbox("비교 지표", sorted(comparison_df["지표"].unique()))
     scheme = st.selectbox("평가 체계", ["THE", "QS"])
     pivot_df = (
         comparison_df[comparison_df["지표"] == indicator][["대학", scheme]]
@@ -560,42 +753,34 @@ def render_benchmark_the_qs_tab() -> None:
 
 
 def render_benchmark_scival_tab() -> None:
-    """Fact Sheet 기반으로 SciVal 스타일 벤치마킹 표를 구성한다."""
-    st.subheader("???? ???? (SciVal)")
-    try:
-        fact_df = get_fact_sheet_dataframe()
-    except Exception as exc:
-        st.error(f"Fact Sheet ???? ???? ?????: {exc}")
-        return
-
+    st.subheader("벤치마킹 대학 비교 (SciVal)")
+    fact_df = get_fact_sheet_dataframe()
     year_options = get_fact_sheet_year_columns(fact_df)
     if not year_options:
-        st.warning("??? Fact Sheet ???? ?? ????? ??? ? ????.")
+        st.warning("표시할 연도 데이터가 없습니다.")
         return
 
     selected_year = st.selectbox(
-        "?? ??",
+        "비교 연도",
         year_options,
-        format_func=lambda y: f"{y}?",
+        format_func=lambda y: f"{y}년",
         key="scival-year",
     )
     scival_df = build_scival_benchmark_dataframe(selected_year, fact_df)
     st.dataframe(scival_df, use_container_width=True)
     st.download_button(
-        "CSV ????",
+        "CSV 다운로드",
         scival_df.to_csv(encoding="utf-8-sig"),
         file_name=f"scival_benchmark_{selected_year}.csv",
         mime="text/csv",
     )
-    st.caption("? ??????? ??? ???? ??? ???? ????.")
+    st.caption("각 대학 값은 Fact Sheet 수치를 단순 가중치로 보정한 모의 값입니다.")
 
 
 def render_placeholder(section_name: str) -> None:
-    """준비되지 않은 섹션에 대한 안내 메시지를 보여준다."""
     st.info(f"{section_name} 섹션은 추후 구현 예정입니다.")
 
 
-# 사이드바 내비게이션 구성을 정의(레이블, 렌더 함수 매핑)한다.
 NAV_STRUCTURE = {
     "전북대학교 현황": [
         ("Global Ranking", render_global_ranking_tab),
@@ -610,10 +795,9 @@ NAV_STRUCTURE = {
 }
 
 with st.sidebar:
-    # 좌측 내비게이션에서 1·2차 영역을 선택하도록 구성한다.
-    st.markdown('<div class="sidebar-nav-title">기관 연구역량</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-nav-title">기준 연구영역</div>', unsafe_allow_html=True)
     primary_section = st.selectbox(
-        "기관 연구역량",
+        "기준 연구영역",
         list(NAV_STRUCTURE.keys()),
         label_visibility="collapsed",
     )
@@ -629,16 +813,12 @@ with st.sidebar:
         )
     else:
         secondary_label = None
-        st.markdown("• 준비 중", unsafe_allow_html=True)
+        st.markdown("준비 중입니다.", unsafe_allow_html=True)
 
-# 본문 상단에 현재 선택한 섹션/페이지를 제목으로 표시한다.
 st.subheader(
-    f"{primary_section} · {secondary_label}"
-    if secondary_label
-    else primary_section
+    f"{primary_section} · {secondary_label}" if secondary_label else primary_section
 )
 
-# 세부 페이지가 선택되면 대응하는 렌더 함수를 호출한다.
 if secondary_label:
     renderer_map = {label: renderer for label, renderer in secondary_options}
     renderer_map[secondary_label]()
