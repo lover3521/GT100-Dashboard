@@ -78,6 +78,8 @@ SCOPUS_EXPORT_FILE = Path(__file__).with_name(
     "Publications_at_Jeonbuk_National_University_2020_-_2024.csv"
 )
 SCIVAL_BENCHMARK_FILE = Path(__file__).with_name("GT100_비교대상 대학_SciVal.xlsx")
+THE_BENCHMARK_PATTERN = "GT100_*THE*.xlsx"
+QS_BENCHMARK_PATTERN = "GT100_*QS*.xlsx"
 
 # 기본 Fact Sheet (엑셀 미제공 시 사용)
 EMBEDDED_FACT_SHEET = {
@@ -309,6 +311,11 @@ SCIVAL_BENCHMARK_MULTIPLIERS = {
     "University B": 0.94,
 }
 
+def _find_first_matching_file(pattern: str) -> Path | None:
+    base_dir = Path(__file__).parent
+    matches = sorted(base_dir.glob(pattern))
+    return matches[0] if matches else None
+
 @st.cache_data
 def load_scival_benchmark_excel(path: Path) -> dict[str, pd.DataFrame]:
     if not path.exists():
@@ -367,6 +374,60 @@ def load_scival_benchmark_excel(path: Path) -> dict[str, pd.DataFrame]:
         sections["최근 5개년"] = _parse_block(five_header_idx, five_header_idx + 1, len(df_raw))
     return sections
 
+def _parse_the_qs_benchmark_excel(path: Path) -> pd.DataFrame:
+    """첫 두 행을 헤더로 사용하는 THE/QS 벤치마킹 엑셀 파서."""
+    try:
+        df_raw = pd.read_excel(path, header=None)
+    except Exception:
+        return pd.DataFrame()
+    if df_raw.empty or len(df_raw) < 3:
+        return pd.DataFrame()
+
+    header_top = df_raw.iloc[0].ffill()
+    header_sub = df_raw.iloc[1].fillna("")
+
+    columns: list[str] = []
+    for top, sub in zip(header_top, header_sub):
+        top_str = "" if pd.isna(top) else str(top).strip()
+        sub_str = "" if pd.isna(sub) else str(sub).strip()
+        if top_str and sub_str:
+            col_name = f"{top_str} - {sub_str}"
+        else:
+            col_name = top_str or sub_str or "항목"
+        columns.append(col_name)
+
+    df = df_raw.iloc[2:].reset_index(drop=True)
+    df.columns = columns
+
+    if "Year" in df.columns:
+        df = df[pd.to_numeric(df["Year"], errors="coerce").notna()].copy()
+        df["Year"] = pd.to_numeric(df["Year"], errors="coerce").astype(int)
+
+    def _likely_numeric(series: pd.Series) -> bool:
+        numeric = pd.to_numeric(series, errors="coerce")
+        return numeric.notna().sum() >= max(1, len(series) // 3)
+
+    for col in df.columns:
+        if col in {"Year", "Institution Name"}:
+            continue
+        if _likely_numeric(df[col]):
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+@st.cache_data
+def load_benchmark_the_qs_data() -> dict[str, pd.DataFrame]:
+    files = {
+        "THE": _find_first_matching_file(THE_BENCHMARK_PATTERN),
+        "QS": _find_first_matching_file(QS_BENCHMARK_PATTERN),
+    }
+    datasets: dict[str, pd.DataFrame] = {}
+    for scheme, path in files.items():
+        if path and path.exists():
+            parsed = _parse_the_qs_benchmark_excel(path)
+            if not parsed.empty:
+                datasets[scheme] = parsed
+    return datasets
+
 
 def format_scival_for_display(df: pd.DataFrame) -> pd.DataFrame:
     """표시용: NaN은 '-', 수치는 콤마와 소수 둘째자리까지."""
@@ -408,6 +469,35 @@ def style_scival_table(df: pd.DataFrame, highlight_university: str | None = "전
         styler = styler.apply(_highlight, axis=1)
 
     return styler
+
+def style_the_qs_table(df: pd.DataFrame, keywords: tuple[str, ...] = ("전북", "Jeonbuk", "JBNU")) -> Styler:
+    """벤치마킹 표에서 전북대 행을 강조하고 숫자 포맷을 적용."""
+    styler = df.style
+
+    def _fmt(v: object) -> str:
+        if pd.isna(v):
+            return "-"
+        try:
+            num = float(v)
+        except Exception:
+            return str(v)
+        return f"{int(num):,}" if num.is_integer() else f"{num:,.2f}"
+    year_cols = [col for col in df.columns if "year" in str(col).lower()]
+    other_cols = [col for col in df.columns if col not in year_cols]
+    if other_cols:
+        styler = styler.format(_fmt, subset=other_cols)
+    if year_cols:
+        styler = styler.format(
+            lambda v: "-" if pd.isna(v) else f"{int(float(v))}", subset=year_cols
+        )
+
+    def _highlight(row: pd.Series) -> list[str]:
+        name = str(row.get("Institution Name", "") or "")
+        is_target = any(keyword in name or keyword in name.upper() for keyword in keywords)
+        style = "background-color: #fff3f5; font-weight: 600;" if is_target else ""
+        return [style] * len(row)
+
+    return styler.apply(_highlight, axis=1)
 
 
 def _scival_group_order_key(group_name: str) -> tuple[int, str]:
@@ -867,26 +957,117 @@ def render_publications_tab() -> None:
 
 def render_benchmark_the_qs_tab() -> None:
     st.subheader("벤치마킹 대학 비교 (THE/QS)")
-    comparison_df = pd.DataFrame(
-        [
-            {"대학": "전북대", "지표": "교육(Teaching)", "THE": 25.1, "QS": 18.4},
-            {"대학": "University A", "지표": "교육(Teaching)", "THE": 38.3, "QS": 32.1},
-            {"대학": "전북대", "지표": "연구(Research)", "THE": 24.3, "QS": 21.4},
-            {"대학": "University A", "지표": "연구(Research)", "THE": 40.2, "QS": 36.8},
-        ]
+    datasets = load_benchmark_the_qs_data()
+    if not datasets:
+        st.warning("벤치마킹 엑셀 파일을 찾을 수 없습니다. 폴더의 THE/QS 파일을 확인해 주세요.")
+        return
+
+    available_schemes = [scheme for scheme, df in datasets.items() if not df.empty]
+    scheme = st.radio(
+        "평가 체계 선택",
+        available_schemes,
+        horizontal=True,
+        index=0 if available_schemes else None,
     )
-    indicator = st.selectbox("비교 지표", sorted(comparison_df["지표"].unique()))
-    scheme = st.selectbox("평가 체계", ["THE", "QS"])
-    pivot_df = (
-        comparison_df[comparison_df["지표"] == indicator][["대학", scheme]]
-        .set_index("대학")
-        .rename(columns={scheme: "점수"})
+    if not scheme:
+        st.info("선택할 수 있는 평가 체계가 없습니다.")
+        return
+
+    df = datasets.get(scheme, pd.DataFrame())
+    if df.empty:
+        st.warning(f"{scheme} 데이터가 비어 있습니다.")
+        return
+
+    if "Year" not in df.columns or "Institution Name" not in df.columns:
+        st.warning(f"{scheme} 데이터에 Year 또는 Institution Name 열이 없습니다.")
+        return
+
+    sorted_years = sorted(df["Year"].dropna().unique(), reverse=True)
+    if not sorted_years:
+        st.info("데이터에 연도 정보가 없습니다.")
+        return
+    selected_year = st.selectbox("연도 선택", sorted_years, index=0 if sorted_years else None)
+    df_year = df[df["Year"] == selected_year]
+    if df_year.empty:
+        st.info("선택한 연도에 데이터가 없습니다.")
+        return
+
+    excluded_cols = {"Year", "Institution Name"}
+    metrics = [col for col in df.columns if col not in excluded_cols]
+    if not metrics:
+        st.info("표시할 지표가 없습니다.")
+        return
+
+    def _choose_metric(cols: list[str]) -> str:
+        score_cols = [c for c in cols if "score" in c.lower()]
+        if score_cols:
+            return score_cols[0]
+        numeric_cols = [c for c in cols if pd.api.types.is_numeric_dtype(df_year[c])]
+        if numeric_cols:
+            return numeric_cols[0]
+        return cols[0]
+
+    selected_metric = _choose_metric(metrics)
+
+    chart_data = df_year[["Institution Name", selected_metric]].dropna(subset=[selected_metric]).copy()
+    chart_data[selected_metric] = pd.to_numeric(chart_data[selected_metric], errors="coerce")
+    chart_data = chart_data.dropna(subset=[selected_metric])
+    if chart_data.empty:
+        st.info("선택한 지표에 표시할 값이 없습니다.")
+        return
+
+    chart_data["is_jbnu"] = chart_data["Institution Name"].astype(str).apply(
+        lambda name: ("전북" in name) or ("Jeonbuk" in name) or ("JBNU" in name.upper())
     )
-    st.bar_chart(pivot_df)
+
+    highlight_color = "#c1121f"
+    default_color = "#9db7e0"
+
+    bar_chart = (
+        alt.Chart(chart_data)
+        .mark_bar()
+        .encode(
+            x=alt.X("Institution Name:N", sort="-y", title="대학"),
+            y=alt.Y(f"{selected_metric}:Q", title=selected_metric),
+            color=alt.condition("is_jbnu == true", alt.value(highlight_color), alt.value(default_color)),
+            tooltip=["Institution Name:N", alt.Tooltip(f"{selected_metric}:Q", title="값")],
+        )
+        .properties(height=340)
+    )
+    st.altair_chart(bar_chart, use_container_width=True)
+
+    st.markdown("#### 표 보기")
+    display_cols = ["Institution Name", "Year", selected_metric, "RANK"] if "RANK" in df.columns else ["Institution Name", "Year", selected_metric]
+    # 포함되지 않은 열은 뒤쪽에 배치
+    display_cols = [col for col in display_cols if col in df_year.columns] + [
+        col for col in df_year.columns if col not in display_cols
+    ]
+    display_df = df_year[display_cols]
     st.dataframe(
-        comparison_df[comparison_df["지표"] == indicator],
+        style_the_qs_table(display_df),
         use_container_width=True,
         hide_index=True,
+    )
+
+    st.download_button(
+        "CSV 다운로드",
+        df_year.to_csv(index=False, encoding="utf-8-sig"),
+        file_name=f"benchmark_{scheme}_{selected_year}.csv",
+        mime="text/csv",
+    )
+
+    st.divider()
+    st.markdown("#### 전체 연도 테이블")
+    st.dataframe(
+        style_the_qs_table(df),
+        use_container_width=True,
+        hide_index=True,
+    )
+    st.download_button(
+        "전체 데이터 CSV 다운로드",
+        df.to_csv(index=False, encoding="utf-8-sig"),
+        file_name=f"benchmark_{scheme}_all_years.csv",
+        mime="text/csv",
     )
 
 def render_benchmark_scival_tab() -> None:
