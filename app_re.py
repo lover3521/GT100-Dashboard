@@ -429,6 +429,67 @@ def load_benchmark_the_qs_data() -> dict[str, pd.DataFrame]:
     return datasets
 
 
+def _get_benchmark_score_for_jbnu(scheme: str) -> tuple[int | None, str | None, float | None]:
+    """THE/QS 벤치마킹 데이터에서 전북대 점수를 추출."""
+    datasets = load_benchmark_the_qs_data()
+    df = datasets.get(scheme)
+    if df is None or df.empty or "Institution Name" not in df.columns:
+        return (None, None, None)
+
+    name_mask = (
+        df["Institution Name"]
+        .astype(str)
+        .str.contains("전북|Jeonbuk|JBNU", case=False, na=False)
+    )
+    df_jbnu = df[name_mask]
+    if df_jbnu.empty:
+        return (None, None, None)
+
+    if "Year" in df_jbnu.columns:
+        df_jbnu = df_jbnu.sort_values("Year", ascending=False)
+    latest_row = df_jbnu.iloc[0]
+    year_value = int(latest_row["Year"]) if "Year" in latest_row and pd.notna(latest_row["Year"]) else None
+
+    candidate_cols = [col for col in df_jbnu.columns if col not in {"Year", "Institution Name"}]
+    if not candidate_cols:
+        return (year_value, None, None)
+
+    def _choose_metric(cols: list[str]) -> str:
+        score_cols = [c for c in cols if "score" in c.lower()]
+        if score_cols:
+            return score_cols[0]
+        numeric_cols = [c for c in cols if pd.api.types.is_numeric_dtype(df_jbnu[c])]
+        if numeric_cols:
+            return numeric_cols[0]
+        return cols[0]
+
+    metric_col = _choose_metric(candidate_cols)
+    raw_value = latest_row.get(metric_col)
+    try:
+        numeric_value = float(raw_value)
+    except (TypeError, ValueError):
+        numeric_value = None
+    return (year_value, metric_col, numeric_value)
+
+
+def _get_jbnu_latest_benchmark_row(scheme: str) -> pd.DataFrame:
+    """전북대(Jeonbuk/JBNU) 최신 연도 행만 반환."""
+    datasets = load_benchmark_the_qs_data()
+    df = datasets.get(scheme)
+    if df is None or df.empty or "Institution Name" not in df.columns:
+        return pd.DataFrame()
+
+    mask = df["Institution Name"].astype(str).str.contains("전북|Jeonbuk|JBNU", case=False, na=False)
+    df_jbnu = df[mask].copy()
+    if df_jbnu.empty:
+        return pd.DataFrame()
+
+    if "Year" in df_jbnu.columns:
+        df_jbnu["Year"] = pd.to_numeric(df_jbnu["Year"], errors="coerce")
+        df_jbnu = df_jbnu.sort_values("Year", ascending=False)
+    return df_jbnu.head(1).reset_index(drop=True)
+
+
 def format_scival_for_display(df: pd.DataFrame) -> pd.DataFrame:
     """표시용: NaN은 '-', 수치는 콤마와 소수 둘째자리까지."""
     display = df.copy()
@@ -518,8 +579,9 @@ def _scival_group_order_key(group_name: str) -> tuple[int, str]:
         order = 5
     return (order, group_name)
 
-def render_global_ranking_tab() -> None:
-    st.subheader("Global Ranking")
+def render_global_ranking_tab(show_heading: bool = True) -> None:
+    if show_heading:
+        st.subheader("Global Ranking")
     ranking_df = pd.DataFrame(
         [
             {"연도": 2022, "THE": "1001-1200", "QS": "571-580"},
@@ -575,6 +637,19 @@ def render_global_ranking_tab() -> None:
         )
         st.altair_chart(chart, use_container_width=True)
     st.dataframe(ranking_df[["연도", "THE", "QS"]], use_container_width=True, hide_index=True)
+
+    st.markdown("#### 전북대 점수 (THE/QS)")
+    jbnu_the = _get_jbnu_latest_benchmark_row("THE")
+    jbnu_qs = _get_jbnu_latest_benchmark_row("QS")
+    if jbnu_the.empty and jbnu_qs.empty:
+        st.info("벤치마킹 데이터에서 전북대 행을 찾지 못했습니다.")
+    else:
+        if not jbnu_the.empty:
+            st.markdown("##### THE")
+            st.dataframe(style_the_qs_table(jbnu_the), use_container_width=True, hide_index=True)
+        if not jbnu_qs.empty:
+            st.markdown("##### QS")
+            st.dataframe(style_the_qs_table(jbnu_qs), use_container_width=True, hide_index=True)
 
 def render_fact_sheet_tab() -> None:
     st.subheader("Fact Sheet")
@@ -866,7 +941,7 @@ def get_publications_dataframe() -> pd.DataFrame:
     return mapped.reset_index(drop=True)
 
 def render_publications_tab() -> None:
-    st.subheader("전북대 논문 목록")
+    st.subheader("Scopus 5년치 연구성과")
     publications_df = get_publications_dataframe()
     if publications_df.empty:
         st.info("표시할 논문 데이터가 없습니다.")
@@ -955,8 +1030,14 @@ def render_publications_tab() -> None:
         mime="text/csv",
     )
 
-def render_benchmark_the_qs_tab() -> None:
-    st.subheader("벤치마킹 대학 비교 (THE/QS)")
+
+def render_wos_performance_tab() -> None:
+    st.subheader("WoS 5년치 연구성과")
+    st.info("WoS 5년치 연구성과 데이터는 추후 업데이트될 예정입니다.")
+
+def render_benchmark_the_qs_tab(show_heading: bool = True) -> None:
+    if show_heading:
+        st.subheader("벤치마킹 대학비교 (THE/QS)")
     datasets = load_benchmark_the_qs_data()
     if not datasets:
         st.warning("벤치마킹 엑셀 파일을 찾을 수 없습니다. 폴더의 THE/QS 파일을 확인해 주세요.")
@@ -1070,8 +1151,9 @@ def render_benchmark_the_qs_tab() -> None:
         mime="text/csv",
     )
 
-def render_benchmark_scival_tab() -> None:
-    st.subheader("벤치마킹 대학 비교 (SciVal)")
+def render_benchmark_scival_tab(show_heading: bool = True) -> None:
+    if show_heading:
+        st.subheader("벤치마킹 대학비교 (SciVal)")
     scival_sections = load_scival_benchmark_excel(SCIVAL_BENCHMARK_FILE)
     if not scival_sections:
         st.warning("SciVal 벤치마킹 데이터를 불러올 수 없습니다. 엑셀 파일을 확인해 주세요.")
@@ -1153,17 +1235,29 @@ def render_placeholder(section_name: str) -> None:
 
 
 
+
+def render_global_benchmark_tab() -> None:
+    st.markdown("### 글로벌 랭킹")
+    render_global_ranking_tab(show_heading=False)
+    st.divider()
+    st.markdown("### 벤치마킹")
+    st.markdown("#### THE/QS")
+    render_benchmark_the_qs_tab(show_heading=False)
+    st.markdown("#### SciVal")
+    render_benchmark_scival_tab(show_heading=False)
+
 NAV_STRUCTURE = {
     "전북대학교 현황": [
-        ("Global Ranking", render_global_ranking_tab),
+        ("글로벌 랭킹/벤치마킹", render_global_benchmark_tab),
         ("Fact Sheet", render_fact_sheet_tab),
-        ("전북대 논문 목록", render_publications_tab),
-        ("벤치마킹 대학 비교 (THE/QS)", render_benchmark_the_qs_tab),
-        ("벤치마킹 대학 비교 (SciVal)", render_benchmark_scival_tab),
     ],
-    "학문분야별 연구성과": [],
-    "우수연구성과 선정": [],
-    "연구지원 전략제언": [],
+    "전북대 연구성과": [
+        ("Scopus 5년치 연구성과", render_publications_tab),
+        ("WoS 5년치 연구성과", render_wos_performance_tab),
+    ],
+    "논문분야별 연구성과": [],
+    "우수연구성과 확정": [],
+    "연구지원·전략제언": [],
 }
 
 # 사이드바 네비게이션 (아코디언 스타일)
