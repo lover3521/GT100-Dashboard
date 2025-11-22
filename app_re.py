@@ -487,6 +487,8 @@ def _get_jbnu_latest_benchmark_row(scheme: str) -> pd.DataFrame:
     if "Year" in df_jbnu.columns:
         df_jbnu["Year"] = pd.to_numeric(df_jbnu["Year"], errors="coerce")
         df_jbnu = df_jbnu.sort_values("Year", ascending=False)
+    if scheme == "QS" and "Institution Name" in df_jbnu.columns:
+        df_jbnu["Institution Name"] = df_jbnu["Institution Name"].replace(QS_INSTITUTION_NAME_MAP)
     return df_jbnu.head(1).reset_index(drop=True)
 
 
@@ -1035,6 +1037,16 @@ def render_wos_performance_tab() -> None:
     st.subheader("WoS 5년치 연구성과")
     st.info("WoS 5년치 연구성과 데이터는 추후 업데이트될 예정입니다.")
 
+
+QS_INSTITUTION_NAME_MAP = {
+    "Korea University": "고려대",
+    "Sungkyunkwan University (SKKU)": "성균관대",
+    "Kyung Hee University": "경희대",
+    "Sejong University": "세종대",
+    "Kyungpook National University (KNU)": "경북대",
+    "Jeonbuk National University": "전북대",
+    "Yeungnam University": "영남대",
+}
 def render_benchmark_the_qs_tab(show_heading: bool = True) -> None:
     if show_heading:
         st.subheader("벤치마킹 대학비교 (THE/QS)")
@@ -1054,7 +1066,12 @@ def render_benchmark_the_qs_tab(show_heading: bool = True) -> None:
         st.info("선택할 수 있는 평가 체계가 없습니다.")
         return
 
-    df = datasets.get(scheme, pd.DataFrame())
+    df_raw = datasets.get(scheme, pd.DataFrame())
+    if scheme == "QS" and not df_raw.empty and "Institution Name" in df_raw.columns:
+        df = df_raw.copy()
+        df["Institution Name"] = df["Institution Name"].replace(QS_INSTITUTION_NAME_MAP)
+    else:
+        df = df_raw
     if df.empty:
         st.warning(f"{scheme} 데이터가 비어 있습니다.")
         return
