@@ -374,41 +374,87 @@ def load_scival_benchmark_excel(path: Path) -> dict[str, pd.DataFrame]:
         sections["최근 5개년"] = _parse_block(five_header_idx, five_header_idx + 1, len(df_raw))
     return sections
 
+YEAR_COLS: tuple[str, ...] = ("연도", "Year")
+INST_COLS: tuple[str, ...] = ("기관명", "Institution Name")
+RANK_COLS: tuple[str, ...] = ("순위", "RANK")
+SCORE_COLS: tuple[str, ...] = ("점수", "Score")
+
+
+def _find_col(df: pd.DataFrame, candidates: tuple[str, ...]) -> str | None:
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
+
+
 def _parse_the_qs_benchmark_excel(path: Path) -> pd.DataFrame:
-    """첫 두 행을 헤더로 사용하는 THE/QS 벤치마킹 엑셀 파서."""
+    """THE/QS 벤치마킹 엑셀을 읽어 한국어 지표명을 컬럼으로 사용."""
     try:
         df_raw = pd.read_excel(path, header=None)
     except Exception:
         return pd.DataFrame()
-    if df_raw.empty or len(df_raw) < 3:
+    if df_raw.empty or len(df_raw) < 2:
         return pd.DataFrame()
 
     header_top = df_raw.iloc[0].ffill()
     header_sub = df_raw.iloc[1].fillna("")
 
+    # 3번째 행에 한국어 지표명이 있는 경우(QS 파일) 활용, 데이터 시작 위치 조정
+    header_kor = None
+    data_start_idx = 2
+    if len(df_raw) >= 3:
+        first_val_row2 = df_raw.iloc[2, 0]
+        first_val_is_year = pd.to_numeric(pd.Series([first_val_row2]), errors="coerce").notna().iloc[0]
+        if not first_val_is_year:
+            header_kor = df_raw.iloc[2]
+            data_start_idx = 3
+
     columns: list[str] = []
-    for top, sub in zip(header_top, header_sub):
+    for idx, (top, sub) in enumerate(zip(header_top, header_sub)):
         top_str = "" if pd.isna(top) else str(top).strip()
         sub_str = "" if pd.isna(sub) else str(sub).strip()
-        if top_str and sub_str:
-            col_name = f"{top_str} - {sub_str}"
+        kor_candidate = None
+        if header_kor is not None and idx < len(header_kor):
+            kor_candidate = header_kor.iloc[idx]
+            kor_candidate = "" if pd.isna(kor_candidate) else str(kor_candidate).strip()
+
+        if kor_candidate:
+            col_name = kor_candidate
+        elif sub_str:
+            col_name = sub_str
+        elif top_str:
+            col_name = top_str
         else:
-            col_name = top_str or sub_str or "항목"
+            col_name = "빈컬럼"
         columns.append(col_name)
 
-    df = df_raw.iloc[2:].reset_index(drop=True)
+    df = df_raw.iloc[data_start_idx:].reset_index(drop=True)
     df.columns = columns
 
-    if "Year" in df.columns:
-        df = df[pd.to_numeric(df["Year"], errors="coerce").notna()].copy()
-        df["Year"] = pd.to_numeric(df["Year"], errors="coerce").astype(int)
+    # 컬럼명 한글화
+    rename_map = {
+        "Year": "연도",
+        "Institution Name": "기관명",
+        "RANK": "순위",
+        "Score": "점수",
+    }
+    df = df.rename(columns=rename_map)
+
+    year_col = _find_col(df, YEAR_COLS)
+    inst_col = _find_col(df, INST_COLS)
+    rank_col = _find_col(df, RANK_COLS)
+
+    if year_col:
+        df = df[pd.to_numeric(df[year_col], errors="coerce").notna()].copy()
+        df[year_col] = pd.to_numeric(df[year_col], errors="coerce").astype(int)
 
     def _likely_numeric(series: pd.Series) -> bool:
         numeric = pd.to_numeric(series, errors="coerce")
         return numeric.notna().sum() >= max(1, len(series) // 3)
 
     for col in df.columns:
-        if col in {"Year", "Institution Name"}:
+        # 순위는 구간 문자열이 포함되어 있어 그대로 보존하고, 나머지만 숫자로 변환
+        if col in {year_col, inst_col, rank_col} or "rank" in str(col).lower() or col == "순위":
             continue
         if _likely_numeric(df[col]):
             df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -433,11 +479,13 @@ def _get_benchmark_score_for_jbnu(scheme: str) -> tuple[int | None, str | None, 
     """THE/QS 벤치마킹 데이터에서 전북대 점수를 추출."""
     datasets = load_benchmark_the_qs_data()
     df = datasets.get(scheme)
-    if df is None or df.empty or "Institution Name" not in df.columns:
+    inst_col = _find_col(df, INST_COLS) if df is not None else None
+    year_col = _find_col(df, YEAR_COLS) if df is not None else None
+    if df is None or df.empty or inst_col is None:
         return (None, None, None)
 
     name_mask = (
-        df["Institution Name"]
+        df[inst_col]
         .astype(str)
         .str.contains("전북|Jeonbuk|JBNU", case=False, na=False)
     )
@@ -445,12 +493,12 @@ def _get_benchmark_score_for_jbnu(scheme: str) -> tuple[int | None, str | None, 
     if df_jbnu.empty:
         return (None, None, None)
 
-    if "Year" in df_jbnu.columns:
-        df_jbnu = df_jbnu.sort_values("Year", ascending=False)
+    if year_col:
+        df_jbnu = df_jbnu.sort_values(year_col, ascending=False)
     latest_row = df_jbnu.iloc[0]
-    year_value = int(latest_row["Year"]) if "Year" in latest_row and pd.notna(latest_row["Year"]) else None
+    year_value = int(latest_row[year_col]) if year_col and pd.notna(latest_row.get(year_col)) else None
 
-    candidate_cols = [col for col in df_jbnu.columns if col not in {"Year", "Institution Name"}]
+    candidate_cols = [col for col in df_jbnu.columns if col not in {year_col, inst_col, _find_col(df_jbnu, RANK_COLS)}]
     if not candidate_cols:
         return (year_value, None, None)
 
@@ -476,19 +524,21 @@ def _get_jbnu_latest_benchmark_row(scheme: str) -> pd.DataFrame:
     """전북대(Jeonbuk/JBNU) 최신 연도 행만 반환."""
     datasets = load_benchmark_the_qs_data()
     df = datasets.get(scheme)
-    if df is None or df.empty or "Institution Name" not in df.columns:
+    inst_col = _find_col(df, INST_COLS) if df is not None else None
+    year_col = _find_col(df, YEAR_COLS) if df is not None else None
+    if df is None or df.empty or inst_col is None:
         return pd.DataFrame()
 
-    mask = df["Institution Name"].astype(str).str.contains("전북|Jeonbuk|JBNU", case=False, na=False)
+    mask = df[inst_col].astype(str).str.contains("전북|Jeonbuk|JBNU", case=False, na=False)
     df_jbnu = df[mask].copy()
     if df_jbnu.empty:
         return pd.DataFrame()
 
-    if "Year" in df_jbnu.columns:
-        df_jbnu["Year"] = pd.to_numeric(df_jbnu["Year"], errors="coerce")
-        df_jbnu = df_jbnu.sort_values("Year", ascending=False)
-    if scheme == "QS" and "Institution Name" in df_jbnu.columns:
-        df_jbnu["Institution Name"] = df_jbnu["Institution Name"].replace(QS_INSTITUTION_NAME_MAP)
+    if year_col:
+        df_jbnu[year_col] = pd.to_numeric(df_jbnu[year_col], errors="coerce")
+        df_jbnu = df_jbnu.sort_values(year_col, ascending=False)
+    if scheme == "QS" and inst_col:
+        df_jbnu[inst_col] = df_jbnu[inst_col].replace(QS_INSTITUTION_NAME_MAP)
     return df_jbnu.head(1).reset_index(drop=True)
 
 
@@ -533,9 +583,93 @@ def style_scival_table(df: pd.DataFrame, highlight_university: str | None = "전
 
     return styler
 
+# SciVal 테이블에서 기관/순위 컬럼 찾고 THE 순위 주입
+def _find_scival_inst_col(df: pd.DataFrame):
+    for col in df.columns:
+        label = " ".join(str(c) for c in col) if isinstance(col, tuple) else str(col)
+        if ("대학" in label) or ("기관" in label) or ("institution" in label.lower()):
+            return col
+    return None
+
+
+def _find_scival_the_rank_cols(df: pd.DataFrame) -> list:
+    rank_cols: list = []
+    for col in df.columns:
+        parts = col if isinstance(col, tuple) else (col,)
+        lowered = [str(p).lower() for p in parts]
+        if any("the" in p for p in lowered) and (any("rank" in p for p in lowered) or any("순위" in str(p) for p in parts)):
+            rank_cols.append(col)
+    return rank_cols
+
+_KOR_TO_THE_INST: dict[str, str] = {
+    "전북대": "Jeonbuk National University",
+    "고려대": "Korea University",
+    "경북대": "Kyungpook National University (KNU)",
+    "경희대": "Kyung Hee University",
+    "세종대": "Sejong University",
+    "성균관대": "Sungkyunkwan University (SKKU)",
+    "영남대": "Yeungnam University",
+    "공동연구 네트워크": [],
+}
+
+
+def _build_the_rank_map() -> dict[str, str]:
+    datasets = load_benchmark_the_qs_data()
+    df_the = datasets.get("THE")
+    if df_the is None or df_the.empty:
+        return {}
+    inst_col = _find_col(df_the, INST_COLS)
+    year_col = _find_col(df_the, YEAR_COLS)
+    rank_col = _find_col(df_the, RANK_COLS)
+    if not inst_col or not rank_col:
+        return {}
+    df_work = df_the.copy()
+    if year_col:
+        df_work[year_col] = pd.to_numeric(df_work[year_col], errors="coerce")
+        df_work = df_work.sort_values(year_col, ascending=False)
+    df_work = df_work.dropna(subset=[inst_col, rank_col])
+    return (
+        df_work.drop_duplicates(subset=[inst_col])[[inst_col, rank_col]]
+        .set_index(inst_col)[rank_col]
+        .astype(str)
+        .apply(lambda s: s.strip())
+        .rename(lambda s: str(s).lower())
+        .to_dict()
+    )
+
+
+def _inject_the_rank_into_scival(df: pd.DataFrame) -> pd.DataFrame:
+    """SciVal 테이블에 THE 순위를 주입 (이미 값이 있으면 보존)."""
+    inst_col = _find_scival_inst_col(df)
+    rank_cols = _find_scival_the_rank_cols(df)
+    rank_map = _build_the_rank_map()
+    if not inst_col or not rank_cols or not rank_map:
+        return df
+    filled = df.copy()
+    name_series = filled[inst_col].astype(str).str.lower().str.strip()
+
+    def _lookup_rank(name: str) -> str | None:
+        # 1) 그대로 (주로 한글 이름) 조회
+        key = name.strip()
+        if key in rank_map:
+            return rank_map[key]
+        # 2) 한글->영문 매핑 후 조회
+        mapped = _KOR_TO_THE_INST.get(key)
+        if mapped:
+            mapped_key = mapped.lower().strip()
+            if mapped_key in rank_map:
+                return rank_map[mapped_key]
+        return None
+
+    fill_values = name_series.map(_lookup_rank)
+    for col in rank_cols:
+        filled[col] = filled[col].fillna(fill_values)
+    return filled
+
 def style_the_qs_table(df: pd.DataFrame, keywords: tuple[str, ...] = ("전북", "Jeonbuk", "JBNU")) -> Styler:
     """벤치마킹 표에서 전북대 행을 강조하고 숫자 포맷을 적용."""
     styler = df.style
+    inst_col = _find_col(df, INST_COLS)
 
     def _fmt(v: object) -> str:
         if pd.isna(v):
@@ -545,7 +679,7 @@ def style_the_qs_table(df: pd.DataFrame, keywords: tuple[str, ...] = ("전북", 
         except Exception:
             return str(v)
         return f"{int(num):,}" if num.is_integer() else f"{num:,.2f}"
-    year_cols = [col for col in df.columns if "year" in str(col).lower()]
+    year_cols = [col for col in df.columns if "year" in str(col).lower() or col == "연도"]
     other_cols = [col for col in df.columns if col not in year_cols]
     if other_cols:
         styler = styler.format(_fmt, subset=other_cols)
@@ -555,7 +689,7 @@ def style_the_qs_table(df: pd.DataFrame, keywords: tuple[str, ...] = ("전북", 
         )
 
     def _highlight(row: pd.Series) -> list[str]:
-        name = str(row.get("Institution Name", "") or "")
+        name = str(row.get(inst_col or "Institution Name", "") or "")
         is_target = any(keyword in name or keyword in name.upper() for keyword in keywords)
         style = "background-color: #fff3f5; font-weight: 600;" if is_target else ""
         return [style] * len(row)
@@ -657,9 +791,9 @@ def render_fact_sheet_tab() -> None:
     st.subheader("Fact Sheet")
     metric_cols = st.columns(3)
     summary_metrics = [
-        ("재학생 수", "28,450명", "+1.2%"),
-        ("전임교원 수", "1,760명", "+0.9%"),
-        ("R&D 투자", "4,280억원", "+3.9%"),
+        ("재학생 수", "17,254명", "-3.6%"),
+        ("전임교원 수", "2,901명", "+0.6%"),
+        ("R&D 투자", "???", "???"),
     ]
     for col, (label, value, delta) in zip(metric_cols, summary_metrics):
         col.metric(label, value, delta)
@@ -1067,30 +1201,36 @@ def render_benchmark_the_qs_tab(show_heading: bool = True) -> None:
         return
 
     df_raw = datasets.get(scheme, pd.DataFrame())
-    if scheme == "QS" and not df_raw.empty and "Institution Name" in df_raw.columns:
+    if scheme == "QS" and not df_raw.empty:
         df = df_raw.copy()
-        df["Institution Name"] = df["Institution Name"].replace(QS_INSTITUTION_NAME_MAP)
+        inst_col_tmp = _find_col(df, INST_COLS)
+        if inst_col_tmp:
+            df[inst_col_tmp] = df[inst_col_tmp].replace(QS_INSTITUTION_NAME_MAP)
     else:
         df = df_raw
     if df.empty:
         st.warning(f"{scheme} 데이터가 비어 있습니다.")
         return
 
-    if "Year" not in df.columns or "Institution Name" not in df.columns:
-        st.warning(f"{scheme} 데이터에 Year 또는 Institution Name 열이 없습니다.")
+    inst_col = _find_col(df, INST_COLS)
+    year_col = _find_col(df, YEAR_COLS)
+    rank_col = _find_col(df, RANK_COLS)
+
+    if inst_col is None or year_col is None:
+        st.warning(f"{scheme} 데이터에 연도 또는 기관명 열이 없습니다.")
         return
 
-    sorted_years = sorted(df["Year"].dropna().unique(), reverse=True)
+    sorted_years = sorted(df[year_col].dropna().unique(), reverse=True)
     if not sorted_years:
         st.info("데이터에 연도 정보가 없습니다.")
         return
     selected_year = st.selectbox("연도 선택", sorted_years, index=0 if sorted_years else None)
-    df_year = df[df["Year"] == selected_year]
+    df_year = df[df[year_col] == selected_year]
     if df_year.empty:
         st.info("선택한 연도에 데이터가 없습니다.")
         return
 
-    excluded_cols = {"Year", "Institution Name"}
+    excluded_cols = {year_col, inst_col, rank_col}
     metrics = [col for col in df.columns if col not in excluded_cols]
     if not metrics:
         st.info("표시할 지표가 없습니다.")
@@ -1107,14 +1247,14 @@ def render_benchmark_the_qs_tab(show_heading: bool = True) -> None:
 
     selected_metric = _choose_metric(metrics)
 
-    chart_data = df_year[["Institution Name", selected_metric]].dropna(subset=[selected_metric]).copy()
+    chart_data = df_year[[inst_col, selected_metric]].dropna(subset=[selected_metric]).copy()
     chart_data[selected_metric] = pd.to_numeric(chart_data[selected_metric], errors="coerce")
     chart_data = chart_data.dropna(subset=[selected_metric])
     if chart_data.empty:
         st.info("선택한 지표에 표시할 값이 없습니다.")
         return
 
-    chart_data["is_jbnu"] = chart_data["Institution Name"].astype(str).apply(
+    chart_data["is_jbnu"] = chart_data[inst_col].astype(str).apply(
         lambda name: ("전북" in name) or ("Jeonbuk" in name) or ("JBNU" in name.upper())
     )
 
@@ -1125,17 +1265,17 @@ def render_benchmark_the_qs_tab(show_heading: bool = True) -> None:
         alt.Chart(chart_data)
         .mark_bar()
         .encode(
-            x=alt.X("Institution Name:N", sort="-y", title="대학"),
+            x=alt.X(f"{inst_col}:N", sort="-y", title="대학"),
             y=alt.Y(f"{selected_metric}:Q", title=selected_metric),
             color=alt.condition("is_jbnu == true", alt.value(highlight_color), alt.value(default_color)),
-            tooltip=["Institution Name:N", alt.Tooltip(f"{selected_metric}:Q", title="값")],
+            tooltip=[f"{inst_col}:N", alt.Tooltip(f"{selected_metric}:Q", title="값")],
         )
         .properties(height=340)
     )
     st.altair_chart(bar_chart, use_container_width=True)
 
     st.markdown("#### 표 보기")
-    display_cols = ["Institution Name", "Year", selected_metric, "RANK"] if "RANK" in df.columns else ["Institution Name", "Year", selected_metric]
+    display_cols = [inst_col, year_col, selected_metric, rank_col] if rank_col else [inst_col, year_col, selected_metric]
     # 포함되지 않은 열은 뒤쪽에 배치
     display_cols = [col for col in display_cols if col in df_year.columns] + [
         col for col in df_year.columns if col not in display_cols
@@ -1269,13 +1409,15 @@ NAV_STRUCTURE = {
         ("Fact Sheet", render_fact_sheet_tab),
     ],
     "전북대 연구성과": [
-        ("Scopus 5년치 연구성과", render_publications_tab),
-        ("WoS 5년치 연구성과", render_wos_performance_tab),
+        ("Scopus 5개년 연구성과", render_publications_tab),
+        ("WoS 5개년 연구성과", render_wos_performance_tab),
     ],
     "논문분야별 연구성과": [],
     "우수연구성과 확정": [],
+    "공동연구 네트워크": [],
     "연구지원·전략제언": [],
 }
+
 
 # 사이드바 네비게이션 (아코디언 스타일)
 with st.sidebar:
