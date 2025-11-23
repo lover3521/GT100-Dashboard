@@ -570,6 +570,8 @@ def _fwci_display_dataframe(df: pd.DataFrame, include_subject: bool = False) -> 
         "Subject": "THE 학문분야",
     }
     display_df = df.rename(columns=rename_map)
+    if not include_subject and "THE 학문분야" in display_df.columns:
+        display_df = display_df.drop(columns=["THE 학문분야"])
     base_order = ["대학", "협력 기관", "협력 국가/지역", "FWCI"]
     if include_subject and "THE 학문분야" in display_df.columns:
         base_order = ["THE 학문분야"] + base_order
@@ -1676,7 +1678,7 @@ NAV_STRUCTURE = {
         ("Scopus 5개년 연구성과", render_publications_tab),
         ("WoS 5개년 연구성과", render_wos_performance_tab),
     ],
-    "논문분야별 연구성과": [],
+    "학문분야별 연구성과": [],
     "우수연구성과 선정": [],
     "국제 연구협력 지표": [
         ("대학별 국제 연구협력 FWCI Top 50", render_international_fwci_by_university_tab),
