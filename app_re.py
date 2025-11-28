@@ -75,7 +75,7 @@ st.divider()
 # 데이터 소스 경로
 FACT_SHEET_FILE = Path(__file__).with_name("통합 문서1.xlsx")
 SCOPUS_EXPORT_FILE = Path(__file__).with_name(
-    "Publications_at_Jeonbuk_National_University_2020_-_2024.csv"
+    "Publications_at_Jeonbuk_National_University_2015_-_2024.xlsx"
 )
 SCIVAL_BENCHMARK_FILE = Path(__file__).with_name("GT100_비교대상 대학_SciVal.xlsx")
 THE_BENCHMARK_PATTERN = "GT100_*THE*.xlsx"
@@ -1148,10 +1148,33 @@ def load_publication_csv(csv_path: str) -> pd.DataFrame:
     except UnicodeDecodeError:
         return pd.read_csv(csv_path, encoding="cp949")
 
+
+def _find_header_row_for_scopus_excel(path: Path) -> int | None:
+    try:
+        preview = pd.read_excel(path, header=None, nrows=50)
+    except Exception:
+        return None
+    first_col = preview.iloc[:, 0]
+    for idx, val in first_col.items():
+        if isinstance(val, str) and val.strip().lower() == "title":
+            return idx
+    return None
+
+
+def load_publication_file(path: Path) -> pd.DataFrame:
+    suffix = path.suffix.lower()
+    if suffix in {".xlsx", ".xls"}:
+        header_row = _find_header_row_for_scopus_excel(path)
+        try:
+            return pd.read_excel(path, header=header_row)
+        except Exception:
+            return pd.DataFrame()
+    return load_publication_csv(str(path))
+
 def get_publications_dataframe() -> pd.DataFrame:
     if SCOPUS_EXPORT_FILE.exists():
         try:
-            df = load_publication_csv(str(SCOPUS_EXPORT_FILE))
+            df = load_publication_file(SCOPUS_EXPORT_FILE)
         except Exception:
             df = pd.DataFrame()
     else:
@@ -1206,7 +1229,7 @@ def get_publications_dataframe() -> pd.DataFrame:
     return mapped.reset_index(drop=True)
 
 def render_publications_tab() -> None:
-    st.subheader("Scopus 5년치 연구성과")
+    st.subheader("Scopus 10년치 연구성과")
     publications_df = get_publications_dataframe()
     if publications_df.empty:
         st.info("표시할 논문 데이터가 없습니다.")
@@ -1297,8 +1320,8 @@ def render_publications_tab() -> None:
 
 
 def render_wos_performance_tab() -> None:
-    st.subheader("WoS 5년치 연구성과")
-    st.info("WoS 5년치 연구성과 데이터는 추후 업데이트될 예정입니다.")
+    st.subheader("WoS 10년치 연구성과")
+    st.info("WoS 10년치 연구성과 데이터는 추후 업데이트될 예정입니다.")
 
 
 QS_INSTITUTION_NAME_MAP = {
@@ -1675,8 +1698,8 @@ NAV_STRUCTURE = {
         ("전북대 연구성과지표", render_fact_sheet_tab),
     ],
     "전북대 연구성과": [
-        ("Scopus 5개년 연구성과", render_publications_tab),
-        ("WoS 5개년 연구성과", render_wos_performance_tab),
+        ("Scopus 10개년 연구성과", render_publications_tab),
+        ("WoS 10개년 연구성과", render_wos_performance_tab),
     ],
     "학문분야별 연구성과": [],
     "우수연구성과 선정": [],
