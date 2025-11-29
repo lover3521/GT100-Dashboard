@@ -75,7 +75,7 @@ st.divider()
 # 데이터 소스 경로
 FACT_SHEET_FILE = Path(__file__).with_name("통합 문서1.xlsx")
 SCOPUS_EXPORT_FILE = Path(__file__).with_name(
-    "Publications_at_Jeonbuk_National_University_2015_-_2024.xlsx"
+    "Publications_at_Jeonbuk_National_University_2015_-_2024.csv"
 )
 SCIVAL_BENCHMARK_FILE = Path(__file__).with_name("GT100_비교대상 대학_SciVal.xlsx")
 THE_BENCHMARK_PATTERN = "GT100_*THE*.xlsx"
@@ -1142,11 +1142,28 @@ def render_fact_sheet_tab() -> None:
         st.info("표시할 Fact Sheet 데이터가 없습니다.")
     st.caption("지표명 뒤 괄호 안에 단위를 표시했습니다.")
 
-def load_publication_csv(csv_path: str) -> pd.DataFrame:
+def _find_header_row_for_scopus_csv(path: Path) -> int | None:
+    """Find the row index that contains the real header (the row whose first cell is 'Title')."""
     try:
-        return pd.read_csv(csv_path, encoding="utf-8")
+        preview = pd.read_csv(path, header=None, nrows=200)
+    except Exception:
+        return None
+
+    first_col = preview.iloc[:, 0]
+    for idx, val in first_col.items():
+        if isinstance(val, str) and val.strip().lower() == "title":
+            return idx
+    return None
+
+
+def load_publication_csv(csv_path: str) -> pd.DataFrame:
+    path = Path(csv_path)
+    header_row = _find_header_row_for_scopus_csv(path)
+    read_kwargs = {"header": header_row} if header_row is not None else {}
+    try:
+        return pd.read_csv(path, encoding="utf-8", **read_kwargs)
     except UnicodeDecodeError:
-        return pd.read_csv(csv_path, encoding="cp949")
+        return pd.read_csv(path, encoding="cp949", **read_kwargs)
 
 
 def _find_header_row_for_scopus_excel(path: Path) -> int | None:
